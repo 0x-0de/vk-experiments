@@ -1,0 +1,4 @@
+# 01b - Hello Triangle (improved)
+This demo is functionally similar to the previous Hello Triangle demo, but contains an improvement which allows you to resize the screen.
+
+The swap chain (specifically, the ```acquire_next_image``` function) now "listens" for changes in the window's size. Whenever a change occurs, or whenever the swap chain goes out-of-date for other reasons, the swap chain, alongside all image views and framebuffers, are deleted and recreated to match the new resolution. The technique I used is similar to what's discussed in the [tutorial](https://docs.vulkan.org/tutorial/latest/03_Drawing_a_triangle/04_Swap_chain_recreation.html), but reshaped to fit my abstraction (established in 01a), and also containing a fix to the signaled semaphore passed into that function.
