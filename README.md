@@ -7,9 +7,11 @@ Here's a list of the completed and in-progress projects I have so far:
 
 **1:** "Hello Triangle" - The "hello world" of Vulkan programs. This program draws a triangle to the screen using nearly 1,000 lines of code. This simple demo is incredibly derivative of the Khronos Vulkan tutorial. (completed)
 
-**1a:** "Hello Triangle" but abstracted. (wip)
+**1a:** "Hello Triangle" but re-abstracted and "personalized" by me to fit my criteria for future projects and tests. (copmleted)
 
-**1b:** "Hello Triangle" improved. (not started)
+**1b:** "Hello Triangle" improved - allowing you to resize the window. (completed)
+
+**2:** "Model Viewer" - Views and rotates a simple model. This will also be derivative of the tutorial, but given how this is post-abstraction, I've tried to make this a program a little more my own. (wip)
 
 It's worth noting that this repository isn't just a source for code, but also my notes and documentation regarding Vulkan and the projects I'm developing. I'm mentioning this because while certain projects (such as the first "Hello Triangle") might be complete code-wise, I may still update the documentation I have for these projects and even the code comments as my understanding of the Vulkan process improves.
 
