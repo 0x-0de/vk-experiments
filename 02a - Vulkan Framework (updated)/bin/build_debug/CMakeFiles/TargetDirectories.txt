@@ -1,0 +1,3 @@
+C:/Users/trevo/Desktop/Depot/Contemporary/Learning Projects/Vulkan/2025/Voxel Engine/bin/build_debug/CMakeFiles/test.dir
+C:/Users/trevo/Desktop/Depot/Contemporary/Learning Projects/Vulkan/2025/Voxel Engine/bin/build_debug/CMakeFiles/edit_cache.dir
+C:/Users/trevo/Desktop/Depot/Contemporary/Learning Projects/Vulkan/2025/Voxel Engine/bin/build_debug/CMakeFiles/rebuild_cache.dir
