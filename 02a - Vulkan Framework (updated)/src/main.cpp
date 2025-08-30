@@ -1,7 +1,5 @@
 #include <iostream>
 
-#include "mesh/mesh.h"
-
 #include "renderer/cmdbuffer.h"
 #include "renderer/descriptor.h"
 #include "renderer/pipeline.h"
@@ -14,6 +12,7 @@
 #include "utils/camera.h"
 #include "utils/image_utils.h"
 #include "utils/linalg.h"
+#include "utils/mesh.h"
 #include "utils/vksync.h"
 
 #include "../lib/GLFW/glfw3.h"
@@ -31,6 +30,9 @@
 #define QUEUE_PRESENT 1
 
 static camera3d* camera;
+
+static alloc::image depth_buffer;
+static VkImageView depth_buffer_view;
 
 bool load_shaders(std::vector<VkShaderModule>* modules)
 {
@@ -75,6 +77,21 @@ void get_vulkan_queues(std::vector<VkQueue>* queues)
 	vkGetDeviceQueue(get_device(), qf.queue_index_present.value(), 0, queues->data() + 1);
 }
 
+void swapchain_resize_callback(swapchain* sc)
+{
+	VkFormat depth_format;
+	if(!utils::find_best_depth_format(&depth_format)) std::cout << "How did we get here?" << std::endl;
+
+	vkDestroyImageView(get_device(), depth_buffer_view, nullptr);
+	alloc::free(depth_buffer);
+
+	alloc::new_image(&depth_buffer, sc->get_extent().width, sc->get_extent().height, depth_format, ALLOC_USAGE_DEPTH_ATTACHMENT);
+	if(!utils::create_image_view(&depth_buffer_view, depth_buffer.vk_image, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT)) throw std::runtime_error("Could not recreate depth buffer during swapchain recreation.");
+
+	sc->clear_swapchain_render_targets();
+	sc->add_swapchain_render_target(depth_buffer_view); //New pointer.
+}
+
 void update_uniforms(uint16_t descriptor_set, double time, descriptor* desc, float width, float height)
 {
 	math::mat projection = math::perspective(70.0 * 3.1415926 / 180.0, width / height, 0.01, 1000.0);
@@ -117,21 +134,34 @@ int main()
 	alloc::init(queues[QUEUE_GRAPHICS], command_pools[0]);
 
 	swapchain* sc = new swapchain(window);
+	sc->add_swapchain_resize_callback(swapchain_resize_callback);
 
 	VkFormat depth_format;
 	if(!utils::find_best_depth_format(&depth_format)) return 1;
 
-	alloc::image depth_buffer;
 	alloc::new_image(&depth_buffer, sc->get_extent().width, sc->get_extent().height, depth_format, ALLOC_USAGE_DEPTH_ATTACHMENT);
-
-	VkImageView depth_buffer_view;
 	if(!utils::create_image_view(&depth_buffer_view, depth_buffer.vk_image, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT)) return 1;
 
-	render_pass* rp = new render_pass(sc->get_format(), depth_format);
+	sc->add_swapchain_render_target(depth_buffer_view);
+
+	render_pass* rp = new render_pass();
+
+	rp->add_attachment(render_pass::create_render_pass_attachment_default_color(sc->get_format().format));
+	rp->add_attachment(render_pass::create_render_pass_attachment_default_depth(depth_format));
+
+	subpass sp;
+
+	sp.color_attachment_indices = {0};
+	sp.depth_attachment_index = 1;
+	sp.pipeline_bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
+
+	rp->add_subpass(sp);
+
+	rp->build();
 
 	uint32_t frame_count = sc->get_image_count();
 	
-	if(!sc->create_framebuffers(rp, depth_buffer_view)) return 1;
+	if(!sc->create_framebuffers(rp)) return 1;
 	
 	std::vector<VkShaderModule> shader_modules;
 	if(!load_shaders(&shader_modules)) return 1;

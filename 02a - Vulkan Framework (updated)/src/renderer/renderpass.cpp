@@ -4,46 +4,102 @@
 
 #include <iostream>
 
-render_pass::render_pass(VkSurfaceFormatKHR swapchain_format, VkFormat depth_format)
+render_pass_attachment render_pass::create_render_pass_attachment_default_color(VkFormat format)
 {
-	VkAttachmentDescription attachment_color{};
-
-	attachment_color.format = swapchain_format.format;
-	attachment_color.samples = VK_SAMPLE_COUNT_1_BIT;
-	attachment_color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	attachment_color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	attachment_color.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	attachment_color.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	attachment_color.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	attachment_color.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-	VkAttachmentDescription attachment_depth{};
-
-	attachment_depth.format = depth_format;
-	attachment_depth.samples = VK_SAMPLE_COUNT_1_BIT;
-	attachment_depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	attachment_depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	attachment_depth.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	attachment_depth.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	attachment_depth.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	attachment_depth.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	render_pass_attachment rpa;
 	
-	VkAttachmentReference attachment_color_reference{};
-
-	attachment_color_reference.attachment = 0;
-	attachment_color_reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-	VkAttachmentReference attachment_depth_reference{};
-
-	attachment_depth_reference.attachment = 1;
-	attachment_depth_reference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	rpa.format = format;
+	rpa.load_operation = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	rpa.store_operation = VK_ATTACHMENT_STORE_OP_STORE;
+	rpa.start_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+	rpa.final_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	rpa.reference_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	
-	VkSubpassDescription subpass_color{};
+	return rpa;
+}
 
-	subpass_color.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-	subpass_color.colorAttachmentCount = 1;
-	subpass_color.pColorAttachments = &attachment_color_reference;
-	subpass_color.pDepthStencilAttachment = &attachment_depth_reference;
+render_pass_attachment render_pass::create_render_pass_attachment_default_depth(VkFormat format)
+{
+	render_pass_attachment rpa;
+	
+	rpa.format = format;
+	rpa.load_operation = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	rpa.store_operation = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	rpa.start_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+	rpa.final_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	rpa.reference_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	
+	return rpa;
+}
+
+render_pass::render_pass()
+{
+	usable = false;
+}
+
+render_pass::~render_pass()
+{
+	vkDestroyRenderPass(get_device(), vk_render_pass, nullptr);
+#ifdef DEBUG_PRINT_SUCCESS
+	std::cout << "[VK|INF] Destroyed Vulkan render pass." << std::endl;
+#endif
+}
+
+void render_pass::add_attachment(render_pass_attachment rpa)
+{
+	attachments.push_back(rpa);
+}
+
+void render_pass::add_subpass(subpass sp)
+{
+	subpasses.push_back(sp);
+}
+
+bool render_pass::build()
+{
+	std::vector<VkAttachmentDescription> attachment_descriptions;
+	std::vector<VkAttachmentReference> attachment_references;
+	
+	std::vector<std::vector<VkAttachmentReference> > subpass_attachment_references;
+	std::vector<VkSubpassDescription> subpass_descriptions;
+	
+	for(size_t i = 0; i < attachments.size(); i++)
+	{
+		render_pass_attachment rpa = attachments[i];
+		
+		VkAttachmentDescription desc{};
+		desc.format = rpa.format;
+		desc.samples = VK_SAMPLE_COUNT_1_BIT;
+		desc.loadOp = rpa.load_operation;
+		desc.storeOp = rpa.store_operation;
+		desc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		desc.initialLayout = rpa.start_layout;
+		desc.finalLayout = rpa.final_layout;
+		attachment_descriptions.push_back(desc);
+		
+		VkAttachmentReference ref{};
+		ref.attachment = i;
+		ref.layout = rpa.reference_layout;
+		attachment_references.push_back(ref);
+	}
+	
+	subpass_attachment_references.resize(subpasses.size());
+	
+	for(size_t i = 0; i < subpasses.size(); i++)
+	{
+		uint32_t num_attachment_indices = subpasses[i].color_attachment_indices.size();
+		VkSubpassDescription subpass{};
+		subpass.pipelineBindPoint = subpasses[i].pipeline_bind_point;
+		subpass.colorAttachmentCount = num_attachment_indices;
+		subpass_attachment_references[i].resize(num_attachment_indices);
+		for(size_t j = 0; j < num_attachment_indices; j++)
+			subpass_attachment_references[i][j] = attachment_references[subpasses[i].color_attachment_indices[j]];
+		subpass.pColorAttachments = subpass_attachment_references[i].data();
+		if(subpasses[i].depth_attachment_index != UINT32_MAX)
+			subpass.pDepthStencilAttachment = attachment_references.data() + subpasses[i].depth_attachment_index;
+		subpass_descriptions.push_back(subpass);
+	}
 	
 	VkSubpassDependency subpass_dependency{};
 
@@ -55,31 +111,22 @@ render_pass::render_pass(VkSurfaceFormatKHR swapchain_format, VkFormat depth_for
 	subpass_dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 	
 	VkRenderPassCreateInfo info_render_pass{};
-
-	std::vector<VkAttachmentDescription> descriptions = {attachment_color, attachment_depth};
-
 	info_render_pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	info_render_pass.attachmentCount = 2;
-	info_render_pass.pAttachments = descriptions.data();
-	info_render_pass.subpassCount = 1;
-	info_render_pass.pSubpasses = &subpass_color;
+	info_render_pass.attachmentCount = attachment_descriptions.size();
+	info_render_pass.pAttachments = attachment_descriptions.data();
+	info_render_pass.subpassCount = subpass_descriptions.size();
+	info_render_pass.pSubpasses = subpass_descriptions.data();
 	info_render_pass.dependencyCount = 1;
 	info_render_pass.pDependencies = &subpass_dependency;
-
+	
 	VkResult r = vkCreateRenderPass(get_device(), &info_render_pass, nullptr, &vk_render_pass);
-	VERIFY_NORETURN(r, "Failed to create Vulkan render pass.")
+	VERIFY(r, "Failed to create Vulkan render pass.")
 	usable = VERIFY_ASSIGN(r);
+	
 #ifdef DEBUG_PRINT_SUCCESS
 	if(usable) std::cout << "[VK|INF] Created Vulkan render pass." << std::endl;
 #endif
-}
-
-render_pass::~render_pass()
-{
-	vkDestroyRenderPass(get_device(), vk_render_pass, nullptr);
-#ifdef DEBUG_PRINT_SUCCESS
-	std::cout << "[VK|INF] Destroyed Vulkan render pass." << std::endl;
-#endif
+	return true;
 }
 
 VkRenderPass render_pass::get_handle() const

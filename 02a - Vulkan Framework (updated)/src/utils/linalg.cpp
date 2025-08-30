@@ -6,6 +6,18 @@
 #include <iomanip>
 #include <string>
 
+static uint8_t permutations[] =
+{
+	21, 32, 54, 58, 56, 37, 36, 50,
+	34, 14, 15,  6, 43, 59,  9, 13,
+	46, 44, 24, 35, 10, 20, 53, 18,
+	30, 21, 19,  8, 32, 11, 61, 26,
+	22, 55,  0, 17, 28,  2, 23,  5,
+	62,  3, 42, 49,  7, 41, 40, 60,
+	51, 39, 33, 25, 16, 48, 29, 47,
+	 4, 57, 63, 45, 52, 31,  1, 38
+};
+
 math::vec::vec()
 {
 	data_size = 0;
@@ -299,6 +311,21 @@ uint16_t math::mat::num_columns() const
 uint16_t math::mat::num_rows() const
 {
 	return size_n;
+}
+
+void math::mat::set(mat ma)
+{
+	if(ma.num_columns() != num_columns() || ma.num_rows() != num_rows())
+	{
+		std::string exc = "Cannot set math::mat of order " + std::to_string(size_m) + "x" + std::to_string(size_n) + " to math::mat of order " + std::to_string(ma.num_columns()) + "x" + std::to_string(ma.num_rows()) + ".";
+		throw std::invalid_argument(exc);
+	}
+	
+	for(uint16_t i = 0; i < num_columns(); i++)
+	for(uint16_t j = 0; j < num_rows(); j++)
+	{
+		data[i][j] = ma[i][j];
+	}
 }
 
 math::vec math::vec2(double x, double y)
@@ -655,7 +682,7 @@ math::mat math::perspective(double fov, double aspect, double near_plane, double
 math::mat math::look_at(vec pos, vec target, vec base_up)
 {
 	vec z_axis = normalize(pos - target);
-	vec x_axis = normalize(cross(base_up, z_axis));
+	vec x_axis = normalize(cross(-base_up, z_axis)); //We flip the y-axis because Vulkan associates +Y with down and -Y with up by default.
 	vec y_axis = cross(z_axis, x_axis);
 
 	mat look(4, 4);
@@ -672,4 +699,194 @@ math::mat math::look_at(vec pos, vec target, vec base_up)
 	look[3][2] = -dot(pos, z_axis);
 
 	return look;
+}
+
+uint64_t wraparound_right(uint64_t x, uint8_t shift)
+{
+	uint64_t r = x >> shift;
+	r |= (x << (64 - shift));
+	return r;
+}
+
+int64_t math::random(int64_t seed)
+{
+	int perm_mask = 63;
+	int64_t r = seed + 0xc22dbcb72481193b;
+	r = wraparound_right(r, permutations[seed & perm_mask]);
+	for(int i = 0; i < 3; i++)
+	{
+		int8_t p = permutations[(unsigned) (r * r) & perm_mask];
+		int8_t sp = permutations[(unsigned) (r + p) & perm_mask];
+		r += r * p * (sp + 11);
+		r *= ((r * r) % 23) + 1;
+		p = wraparound_right(p, sp);
+		r ^= (p * p * r);
+		r = wraparound_right(r, permutations[(unsigned) r & perm_mask]);
+	}
+	r = wraparound_right(r, permutations[r & perm_mask]);
+	return r;
+}
+
+double math::random_float(int64_t seed)
+{
+	return (double) random(seed) / INT64_MAX;
+}
+
+double math::interp_linear_1d(double a, double b, double t)
+{
+	return t * (b - a) + a;
+}
+
+double math::interp_linear_2d(double aa, double ba, double ab, double bb, double t, double tt)
+{
+	return interp_linear_1d(interp_linear_1d(aa, ba, t), interp_linear_1d(ab, bb, t), tt);
+}
+
+double math::interp_linear_3d(double aaa, double baa, double aba, double bba, double aab, double bab, double abb, double bbb, double t, double tt, double ttt)
+{
+	return interp_linear_1d(interp_linear_2d(aaa, baa, aba, bba, t, tt), interp_linear_2d(aab, bab, abb, bbb, t, tt), ttt);
+}
+
+double math::interp_cosine_1d(double a, double b, double t)
+{
+	double mu = (1 - std::cos(t * 3.1415926)) / 2;
+	return (a * (1 - mu) + b * mu);
+}
+
+double math::interp_cosine_2d(double aa, double ba, double ab, double bb, double t, double tt)
+{
+	return interp_cosine_1d(interp_cosine_1d(aa, ba, t), interp_cosine_1d(ab, bb, t), tt);
+}
+
+double math::interp_cosine_3d(double aaa, double baa, double aba, double bba, double aab, double bab, double abb, double bbb, double t, double tt, double ttt)
+{
+	return interp_cosine_1d(interp_cosine_2d(aaa, baa, aba, bba, t, tt), interp_cosine_2d(aab, bab, abb, bbb, t, tt), ttt);
+}
+
+int64_t get_gradient_code_2d(int64_t x, int64_t y)
+{
+	return x + y + x * y + y * y;
+}
+
+int64_t get_gradient_code_3d(int64_t x, int64_t y, int64_t z)
+{
+	return x + y + z + x * y + y * z + z * x + y * y + z * z * z;
+}
+
+double math::gradient_noise_2d_linear(int64_t seed, double x, double y)
+{
+	int64_t ax = std::floor(x);
+	int64_t ay = std::floor(y);
+	
+	int64_t bx = ax + 1;
+	int64_t by = ay + 1;
+	
+	double dx = x - ax;
+	double dy = y - ay;
+	
+	int64_t seed_aa = (get_gradient_code_2d(ax, ay) + seed);
+	int64_t seed_ab = (get_gradient_code_2d(ax, by) + seed);
+	int64_t seed_ba = (get_gradient_code_2d(bx, ay) + seed);
+	int64_t seed_bb = (get_gradient_code_2d(bx, by) + seed);
+	
+	double r_aa = random_float(seed_aa);
+	double r_ab = random_float(seed_ab);
+	double r_ba = random_float(seed_ba);
+	double r_bb = random_float(seed_bb);
+	
+	return interp_linear_2d(r_aa, r_ba, r_ab, r_bb, dx, dy);
+}
+
+double math::gradient_noise_3d_linear(int64_t seed, double x, double y, double z)
+{
+	int64_t ax = std::floor(x);
+	int64_t ay = std::floor(y);
+	int64_t az = std::floor(z);
+	
+	int64_t bx = ax + 1;
+	int64_t by = ay + 1;
+	int64_t bz = az + 1;
+	
+	double dx = x - ax;
+	double dy = y - ay;
+	double dz = z - az;
+	
+	int64_t seed_aaa = (get_gradient_code_3d(ax, ay, az) + seed);
+	int64_t seed_baa = (get_gradient_code_3d(bx, ay, az) + seed);
+	int64_t seed_aba = (get_gradient_code_3d(ax, by, az) + seed);
+	int64_t seed_bba = (get_gradient_code_3d(bx, by, az) + seed);
+	int64_t seed_aab = (get_gradient_code_3d(ax, ay, bz) + seed);
+	int64_t seed_bab = (get_gradient_code_3d(bx, ay, bz) + seed);
+	int64_t seed_abb = (get_gradient_code_3d(ax, by, bz) + seed);
+	int64_t seed_bbb = (get_gradient_code_3d(bx, by, bz) + seed);
+	
+	double r_aaa = random_float(seed_aaa);
+	double r_baa = random_float(seed_baa);
+	double r_aba = random_float(seed_aba);
+	double r_bba = random_float(seed_bba);
+	double r_aab = random_float(seed_aab);
+	double r_bab = random_float(seed_bab);
+	double r_abb = random_float(seed_abb);
+	double r_bbb = random_float(seed_bbb);
+	
+	return interp_linear_3d(r_aaa, r_baa, r_aba, r_bba, r_aab, r_bab, r_abb, r_bbb, dx, dy, dz);
+}
+
+double math::gradient_noise_2d_cosine(int64_t seed, double x, double y)
+{
+	int64_t ax = std::floor(x);
+	int64_t ay = std::floor(y);
+	
+	int64_t bx = ax + 1;
+	int64_t by = ay + 1;
+	
+	double dx = x - ax;
+	double dy = y - ay;
+	
+	int64_t seed_aa = (get_gradient_code_2d(ax, ay) + seed);
+	int64_t seed_ab = (get_gradient_code_2d(ax, by) + seed);
+	int64_t seed_ba = (get_gradient_code_2d(bx, ay) + seed);
+	int64_t seed_bb = (get_gradient_code_2d(bx, by) + seed);
+	
+	double r_aa = random_float(seed_aa);
+	double r_ab = random_float(seed_ab);
+	double r_ba = random_float(seed_ba);
+	double r_bb = random_float(seed_bb);
+	
+	return interp_cosine_2d(r_aa, r_ba, r_ab, r_bb, dx, dy);
+}
+
+double math::gradient_noise_3d_cosine(int64_t seed, double x, double y, double z)
+{
+	int64_t ax = std::floor(x);
+	int64_t ay = std::floor(y);
+	int64_t az = std::floor(z);
+	
+	int64_t bx = ax + 1;
+	int64_t by = ay + 1;
+	int64_t bz = az + 1;
+	
+	double dx = x - ax;
+	double dy = y - ay;
+	double dz = z - az;
+	
+	int64_t seed_aaa = (get_gradient_code_3d(ax, ay, az) + seed);
+	int64_t seed_baa = (get_gradient_code_3d(bx, ay, az) + seed);
+	int64_t seed_aba = (get_gradient_code_3d(ax, by, az) + seed);
+	int64_t seed_bba = (get_gradient_code_3d(bx, by, az) + seed);
+	int64_t seed_aab = (get_gradient_code_3d(ax, ay, bz) + seed);
+	int64_t seed_bab = (get_gradient_code_3d(bx, ay, bz) + seed);
+	int64_t seed_abb = (get_gradient_code_3d(ax, by, bz) + seed);
+	int64_t seed_bbb = (get_gradient_code_3d(bx, by, bz) + seed);
+	
+	double r_aaa = random_float(seed_aaa);
+	double r_baa = random_float(seed_baa);
+	double r_aba = random_float(seed_aba);
+	double r_bba = random_float(seed_bba);
+	double r_aab = random_float(seed_aab);
+	double r_bab = random_float(seed_bab);
+	double r_abb = random_float(seed_abb);
+	double r_bbb = random_float(seed_bbb);
+	
+	return interp_cosine_3d(r_aaa, r_baa, r_aba, r_bba, r_aab, r_bab, r_abb, r_bbb, dx, dy, dz);
 }

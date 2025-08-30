@@ -52,6 +52,8 @@ namespace math
 			
 			uint16_t num_columns() const;
 			uint16_t num_rows() const;
+			
+			void set(mat ma);
 		private:
 			uint16_t size_m, size_n;
 			vec* data;
@@ -85,6 +87,24 @@ namespace math
 	mat transform(vec translation, mat rotation, vec scale);
 	mat perspective(double fov, double aspect, double near_plane, double far_plane);
 	mat look_at(vec pos, vec target, vec base_up);
+	
+	double interp_linear_1d(double a, double b, double t);
+	double interp_cosine_1d(double a, double b, double t);
+	
+	double interp_linear_2d(double aa, double ba, double ab, double bb, double t, double tt);
+	double interp_cosine_2d(double aa, double ba, double ab, double bb, double t, double tt);
+	
+	double interp_linear_3d(double aaa, double baa, double aba, double bba, double aab, double bab, double abb, double bbb, double t, double tt, double ttt);
+	double interp_cosine_3d(double aaa, double baa, double aba, double bba, double aab, double bab, double abb, double bbb, double t, double tt, double ttt);
+	
+	double gradient_noise_2d_linear(int64_t seed, double x, double y);
+	double gradient_noise_3d_linear(int64_t seed, double x, double y, double z);
+	
+	double gradient_noise_2d_cosine(int64_t seed, double x, double y);
+	double gradient_noise_3d_cosine(int64_t seed, double x, double y, double z);
+	
+	int64_t random(int64_t seed);
+	double random_float(int64_t seed);
 }
 
 #endif

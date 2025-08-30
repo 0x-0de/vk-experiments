@@ -8,6 +8,8 @@
 #define ALLOC_USAGE_UNIFORM_BUFFER 2
 #define ALLOC_USAGE_TEXTURE 3
 #define ALLOC_USAGE_DEPTH_ATTACHMENT 4
+#define ALLOC_USAGE_COLOR_ATTACHMENT 5
+#define ALLOC_USAGE_COLOR_ATTACHMENT_CPU_VISIBLE 6
 
 #define ALLOC_DEFAULT_BUFFER_SHARING_MODE VK_SHARING_MODE_EXCLUSIVE
 
@@ -25,6 +27,9 @@ namespace alloc
 	struct image
 	{
 		VkImage vk_image;
+		VkFormat vk_format;
+		
+		uint16_t width, height;
 
 		uint16_t page_index;
 		uint32_t page_offset;
@@ -45,6 +50,8 @@ namespace alloc
 	
 	void free(buffer buf);
 	void free(image buf);
+	
+	VkDeviceMemory get_memory_page(uint16_t index);
 
 	VkBuffer get_staging_buffer();
 	VkCommandPool get_staging_command_pool();

@@ -38,6 +38,79 @@ bool utils::find_best_depth_format(VkFormat* format)
     return true;
 }
 
+uint8_t utils::get_format_pixel_size(VkFormat format)
+{
+	switch(format)
+	{
+		case VK_FORMAT_UNDEFINED:
+		default:
+			std::cerr << "[UTILS|ERR] Cannot get image format pixel size for format " << format << "." << std::endl;
+			return 0;
+		case VK_FORMAT_R4G4_UNORM_PACK8:
+		case VK_FORMAT_A8_UNORM:
+		case VK_FORMAT_R8_UNORM:
+		case VK_FORMAT_R8_SNORM:
+		case VK_FORMAT_R8_USCALED:
+		case VK_FORMAT_R8_SSCALED:
+		case VK_FORMAT_R8_UINT:
+		case VK_FORMAT_R8_SINT:
+		case VK_FORMAT_R8_SRGB: 
+			return 8;
+		case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
+		case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
+		case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
+		case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
+		case VK_FORMAT_R5G6B5_UNORM_PACK16:
+		case VK_FORMAT_B5G6R5_UNORM_PACK16:
+		case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+		case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
+		case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
+		case VK_FORMAT_A1B5G5R5_UNORM_PACK16:
+		case VK_FORMAT_R8G8_UNORM:
+		case VK_FORMAT_R8G8_SNORM:
+		case VK_FORMAT_R8G8_USCALED:
+		case VK_FORMAT_R8G8_SSCALED:
+		case VK_FORMAT_R8G8_UINT:
+		case VK_FORMAT_R8G8_SINT:
+		case VK_FORMAT_R8G8_SRGB: 
+			return 16;
+		case VK_FORMAT_R8G8B8_UNORM:
+		case VK_FORMAT_R8G8B8_SNORM:
+		case VK_FORMAT_R8G8B8_USCALED:
+		case VK_FORMAT_R8G8B8_SSCALED:
+		case VK_FORMAT_R8G8B8_UINT:
+		case VK_FORMAT_R8G8B8_SINT:
+		case VK_FORMAT_R8G8B8_SRGB:
+		case VK_FORMAT_B8G8R8_UNORM:
+		case VK_FORMAT_B8G8R8_SNORM:
+		case VK_FORMAT_B8G8R8_USCALED:
+		case VK_FORMAT_B8G8R8_SSCALED:
+		case VK_FORMAT_B8G8R8_UINT:
+		case VK_FORMAT_B8G8R8_SINT:
+		case VK_FORMAT_B8G8R8_SRGB:
+			return 24;
+		case VK_FORMAT_R8G8B8A8_UNORM:
+		case VK_FORMAT_R8G8B8A8_SNORM:
+		case VK_FORMAT_R8G8B8A8_USCALED:
+		case VK_FORMAT_R8G8B8A8_SSCALED:
+		case VK_FORMAT_R8G8B8A8_UINT:
+		case VK_FORMAT_R8G8B8A8_SINT:
+		case VK_FORMAT_R8G8B8A8_SRGB:
+		case VK_FORMAT_B8G8R8A8_UNORM:
+		case VK_FORMAT_B8G8R8A8_SNORM:
+		case VK_FORMAT_B8G8R8A8_USCALED:
+		case VK_FORMAT_B8G8R8A8_SSCALED:
+		case VK_FORMAT_B8G8R8A8_UINT:
+		case VK_FORMAT_B8G8R8A8_SINT:
+		case VK_FORMAT_B8G8R8A8_SRGB:
+			return 32;
+		case VK_FORMAT_R32G32B32_SFLOAT:
+			return 96;
+		case VK_FORMAT_R32G32B32A32_SFLOAT:
+			return 128;
+	}
+}
+
 std::vector<VkFormat> utils::find_supported_formats(std::vector<VkFormat> candidates, VkImageTiling tiling, VkFormatFeatureFlags features)
 {
     std::vector<VkFormat> passed;
@@ -127,6 +200,28 @@ bool utils::load_bmp_texture(const char* filepath, unsigned int* width, unsigned
     }
 
     return false;
+}
+
+bool utils::read_pixel(alloc::image* image, uint32_t x, uint32_t y, void* data)
+{
+	uint8_t pixel_size = get_format_pixel_size(image->vk_format) >> 3;
+	VkDeviceMemory mem = alloc::get_memory_page(image->page_index);
+
+	size_t pixel_offset = (x * image->height + y) * pixel_size;
+	if(pixel_offset > image->allocation_size)
+	{
+		std::cerr << "[UTILS|ERR] Requested image pixel (" << x << ", " << y << ") exceeds image boundaries." << std::endl;
+		return false;
+	}
+	
+	std::cout << image->page_offset << std::endl;
+	
+	void* map;
+	vkMapMemory(get_device(), mem, pixel_offset + image->page_offset, pixel_size, 0, &map);
+		memcpy(data, map, pixel_size);
+	vkUnmapMemory(get_device(), mem);
+	
+	return true;
 }
 
 bool utils::transition_image_layout(alloc::image* image, VkFormat format, VkImageAspectFlags aspect, VkImageLayout old_layout, VkImageLayout new_layout)

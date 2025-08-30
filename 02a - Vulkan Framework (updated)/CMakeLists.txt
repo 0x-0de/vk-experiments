@@ -24,7 +24,7 @@ set(BUILD_SOURCES
 	"utils/vksync"
 	"utils/linalg"
 	"utils/image_utils"
-	"mesh/mesh"
+	"utils/mesh"
 	"utils/camera"
 )
 

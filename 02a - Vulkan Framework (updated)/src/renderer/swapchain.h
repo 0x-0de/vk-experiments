@@ -26,9 +26,15 @@ class swapchain
 	public:
 		swapchain(GLFWwindow* window);
 		~swapchain();
+
+		void add_swapchain_render_target(VkImageView render_target);
+		void add_swapchain_resize_callback(void (*callback)(swapchain* sc));
+
+		void clear_swapchain_render_targets();
+		
+		static bool create_framebuffer(VkFramebuffer* framebuffer, render_pass* rp, std::vector<VkImageView> views, VkExtent2D extent);
 		
 		bool create_framebuffers(render_pass* rp);
-		bool create_framebuffers(render_pass* rp, VkImageView depth_buffer);
 		
 		uint32_t get_current_image_index() const;
 		VkViewport get_default_viewport() const;
@@ -77,9 +83,13 @@ class swapchain
 		std::vector<VkImage> images;
 		std::vector<VkImageView> image_views;
 		std::vector<VkFramebuffer> framebuffers;
+
+		std::vector<VkImageView> additional_render_targets;
 		
 		std::vector<fence*> frame_finished;
 		std::vector<semaphore*> render_finished;
+
+		std::vector<void (*)(swapchain* sc)> swapchain_resize_callbacks;
 
 		fence* image_retrieved;
 		render_pass* refresh_rp;

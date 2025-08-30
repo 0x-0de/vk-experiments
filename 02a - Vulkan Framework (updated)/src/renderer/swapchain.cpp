@@ -120,6 +120,22 @@ VkExtent2D choose_swapchain_extent(GLFWwindow* window, swapchain_properties prop
     }
 }
 
+bool swapchain::create_framebuffer(VkFramebuffer* framebuffer, render_pass* rp, std::vector<VkImageView> views, VkExtent2D extent)
+{	
+	VkFramebufferCreateInfo info_framebuffer{};
+	info_framebuffer.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	info_framebuffer.renderPass = rp->get_handle();
+	info_framebuffer.attachmentCount = views.size();
+	info_framebuffer.pAttachments = views.data();
+	info_framebuffer.width = extent.width;
+	info_framebuffer.height = extent.height;
+	info_framebuffer.layers = 1;
+
+	VkResult r = vkCreateFramebuffer(get_device(), &info_framebuffer, nullptr, framebuffer);
+	VERIFY(r, "Failed to create swapchain framebuffer.")
+	return true;
+}
+
 swapchain::swapchain(GLFWwindow* window) : window(window)
 {
 	usable = create_swap_chain();
@@ -144,51 +160,42 @@ swapchain::~swapchain()
 #endif
 }
 
+void swapchain::add_swapchain_render_target(VkImageView render_target)
+{
+	additional_render_targets.push_back(render_target);
+}
+
+void swapchain::add_swapchain_resize_callback(void (*callback)(swapchain* sc))
+{
+	swapchain_resize_callbacks.push_back(callback);
+}
+
+void swapchain::clear_swapchain_render_targets()
+{
+	additional_render_targets.clear();
+}
+
 bool swapchain::create_framebuffers(render_pass* rp)
 {
 	framebuffers.resize(image_views.size());
 	
 	for(uint32_t i = 0; i < framebuffers.size(); i++)
 	{
-		VkImageView attachments[] = {image_views[i]};
+		std::vector<VkImageView> attachments;
+		attachments.resize(additional_render_targets.size() + 1);
+
+		attachments[0] = image_views[i];
+		for(size_t j = 0; j < additional_render_targets.size(); j++)
+			attachments[j + 1] = additional_render_targets[j];
 
 		VkFramebufferCreateInfo info_framebuffer{};
 		info_framebuffer.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		info_framebuffer.renderPass = rp->get_handle();
-		info_framebuffer.attachmentCount = 1;
-		info_framebuffer.pAttachments = attachments;
+		info_framebuffer.attachmentCount = attachments.size();
+		info_framebuffer.pAttachments = attachments.data();
 		info_framebuffer.width = extent.width;
 		info_framebuffer.height = extent.height;
 		info_framebuffer.layers = 1;
-
-		std::cout << extent.width << ", " << extent.height << std::endl;
-
-		VkResult r = vkCreateFramebuffer(get_device(), &info_framebuffer, nullptr, framebuffers.data() + i);
-		VERIFY(r, "Failed to create swapchain framebuffer.")
-	}
-	
-	refresh_rp = rp;
-	return true;
-}
-
-bool swapchain::create_framebuffers(render_pass* rp, VkImageView depth_buffer)
-{
-	framebuffers.resize(image_views.size());
-	
-	for(uint32_t i = 0; i < framebuffers.size(); i++)
-	{
-		VkImageView attachments[] = {image_views[i], depth_buffer};
-
-		VkFramebufferCreateInfo info_framebuffer{};
-		info_framebuffer.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		info_framebuffer.renderPass = rp->get_handle();
-		info_framebuffer.attachmentCount = 2;
-		info_framebuffer.pAttachments = attachments;
-		info_framebuffer.width = extent.width;
-		info_framebuffer.height = extent.height;
-		info_framebuffer.layers = 1;
-
-		std::cout << extent.width << ", " << extent.height << std::endl;
 
 		VkResult r = vkCreateFramebuffer(get_device(), &info_framebuffer, nullptr, framebuffers.data() + i);
 		VERIFY(r, "Failed to create swapchain framebuffer.")
@@ -474,6 +481,10 @@ void swapchain::refresh_swap_chain()
 
 	destroy_swap_chain();
 	create_swap_chain();
+
+	for(size_t i = 0; i < swapchain_resize_callbacks.size(); i++)
+		swapchain_resize_callbacks[i](this);
+
 	create_framebuffers(refresh_rp);
 }
 

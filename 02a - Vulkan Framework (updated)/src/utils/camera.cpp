@@ -26,7 +26,7 @@ void camera3d::add_pos(math::vec val)
 
 void camera3d::add_rot(double x, double y, double sensitivity)
 {
-    rot_x -= (double) x * (0.001 * sensitivity);
+    rot_x += (double) x * (0.001 * sensitivity);
     rot_y -= (double) y * (0.001 * sensitivity);
 
     if(rot_y < -(3.1415926 / 2)) rot_y = -(3.1415926 / 2);
@@ -41,6 +41,8 @@ void camera3d::add_rot(double x, double y, double sensitivity)
 
 void camera3d::freemove(GLFWwindow* win, double speed)
 {
+	if(glfwGetKey(win, GLFW_KEY_LEFT_SHIFT)) speed *= 10;
+	
     if(glfwGetKey(win, GLFW_KEY_W))
     {
         add_pos(rot * speed);
@@ -52,11 +54,11 @@ void camera3d::freemove(GLFWwindow* win, double speed)
 
     if(glfwGetKey(win, GLFW_KEY_A))
     {
-        add_pos(-math::normalize(math::cross(rot, math::vec3(0, 1, 0))) * speed);
+        add_pos(math::normalize(math::cross(rot, math::vec3(0, 1, 0))) * speed);
     }
     if(glfwGetKey(win, GLFW_KEY_D))
     {
-        add_pos(math::normalize(math::cross(rot, math::vec3(0, 1, 0))) * speed);
+        add_pos(-math::normalize(math::cross(rot, math::vec3(0, 1, 0))) * speed);
     }
 }
 
@@ -102,7 +104,7 @@ void camera3d::update_rot(GLFWwindow* win, double sensitivity, bool rotate)
     double cursor_x, cursor_y;
     glfwGetCursorPos(win, &cursor_x, &cursor_y);
 
-    if(rotate) add_rot(cursor_x - prev_cursor_x, prev_cursor_y - cursor_y, sensitivity);
+    if(rotate) add_rot(cursor_x - prev_cursor_x, cursor_y - prev_cursor_y, sensitivity);
 
     prev_cursor_x = cursor_x;
     prev_cursor_y = cursor_y;

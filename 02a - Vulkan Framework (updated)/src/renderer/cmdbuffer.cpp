@@ -78,7 +78,7 @@ void command_buffer::bind_descriptor_set(VkPipelineLayout layout, VkDescriptorSe
 
 void command_buffer::bind_index_buffer(VkBuffer buffer, uint32_t offset)
 {
-	vkCmdBindIndexBuffer(vk_command_buffer, buffer, offset, VK_INDEX_TYPE_UINT16);
+	vkCmdBindIndexBuffer(vk_command_buffer, buffer, offset, VK_INDEX_TYPE_UINT32);
 }
 
 void command_buffer::bind_pipeline(pipeline* p)

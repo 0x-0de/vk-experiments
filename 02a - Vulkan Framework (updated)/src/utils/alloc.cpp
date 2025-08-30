@@ -2,7 +2,7 @@
 
 #define MB (1<<20)
 #define DEFAULT_PAGE_SIZE 128*MB
-#define STAGING_MEMORY_SIZE 32*MB
+#define STAGING_MEMORY_SIZE 128*MB
 
 #define PAGE_MEMORY_TYPE_DEVICE_LOCAL VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 #define PAGE_MEMORY_TYPE_HOST_AVAILABLE VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
@@ -10,6 +10,7 @@
 #define USAGE_STAGED_VERTEX_BUFFER (VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
 #define USAGE_STAGED_INDEX_BUFFER (VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT)
 #define USAGE_STAGED_SAMPLED_IMAGE (VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+#define USAGE_COLOR_ATTACHMENT VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
 #define USAGE_DEPTH_ATTACHMENT VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
 
 #define USAGE_UNIFORM_BUFFER VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
@@ -19,6 +20,8 @@
 #include "../renderer/vksetup.h"
 
 #include "image_utils.h"
+
+static uint32_t requested_allocation_type;
 
 struct freelist_node
 {
@@ -35,6 +38,89 @@ struct mem_page
 
 static std::vector<mem_page> mem_pages;
 
+std::string requested_allocation_to_string(uint32_t usage)
+{
+	switch(usage)
+	{
+		case ALLOC_USAGE_STAGED_VERTEX_BUFFER:
+			return "ALLOC_USAGE_STAGED_VERTEX_BUFFER";
+		case ALLOC_USAGE_STAGED_INDEX_BUFFER:
+			return "ALLOC_USAGE_STAGED_INDEX_BUFFER";
+		case ALLOC_USAGE_UNIFORM_BUFFER:
+			return "ALLOC_USAGE_UNIFORM_BUFFER";
+		case ALLOC_USAGE_TEXTURE:
+			return "ALLOC_USAGE_TEXTURE";
+		case ALLOC_USAGE_DEPTH_ATTACHMENT:
+			return "ALLOC_USAGE_DEPTH_ATTACHMENT";
+		case ALLOC_USAGE_COLOR_ATTACHMENT:
+			return "ALLOC_USAGE_COLOR_ATTACHMENT";
+		case ALLOC_USAGE_COLOR_ATTACHMENT_CPU_VISIBLE:
+			return "ALLOC_USAGE_COLOR_ATTACHMENT_CPU_VISIBLE";
+		default:
+			return "UNKNOWN OR INVALID ALLOC USAGE";
+	}
+}
+
+std::string memory_type_filter_to_string(uint32_t type_filter)
+{
+	std::string str = "";
+
+	for(size_t i = 0; i < 32; i++)
+	{
+		if((type_filter >> i) & 1)
+			str += std::to_string(i) + " ";
+	}
+
+	return str;
+}
+
+std::string memory_heap_flags_to_string(VkMemoryHeapFlags flags)
+{
+	std::string str = "";
+
+	if(flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) str += "| MEMORY_HEAP_DEVICE_LOCAL ";
+	if((flags & VK_MEMORY_HEAP_MULTI_INSTANCE_BIT) || (flags & VK_MEMORY_HEAP_MULTI_INSTANCE_BIT_KHR)) str += "| MEMORY_HEAP_MULTI_INSTANCE ";
+	if(flags & VK_MEMORY_HEAP_TILE_MEMORY_BIT_QCOM) str += "| MEMORY_HEAP_TILE_MEMORY_QCOM ";
+
+	return str;
+}
+
+std::string memory_type_flags_to_string(VkMemoryPropertyFlags flags)
+{
+	std::string str = "";
+
+	if(flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) str += "| MEMORY_PROPERTY_DEVICE_LOCAL ";
+	if(flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) str += "| MEMORY_PROPERTY_HOST_VISIBLE ";
+	if(flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) str += "| MEMORY_PROPERTY_HOST_COHERENT ";
+	if(flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) str += "| MEMORY_PROPERTY_HOST_CACHED ";
+	if(flags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) str += "| MEMORY_PROPERTY_LAZILY_ALLOCATED ";
+	if(flags & VK_MEMORY_PROPERTY_PROTECTED_BIT) str += "| MEMORY_PROPERTY_PROTECTED ";
+	if(flags & VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD) str += "| MEMORY_PROPERTY_DEVICE_COHERENT_AMD ";
+	if(flags & VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD) str += "| MEMORY_PROPERTY_DEVICE_UNCACHED_AMD ";
+	if(flags & VK_MEMORY_PROPERTY_RDMA_CAPABLE_BIT_NV) str += "| MEMORY_PROPERTY_RDMA_CAPABLE_NV ";
+
+	return str;
+}
+
+void print_physical_device_memory_properties(VkPhysicalDeviceMemoryProperties properties)
+{
+	std::cout << "[ALLOC|INF] Memory properties for physical device:" << std::endl;
+	std::cout << "\tNumber of memory types: " << properties.memoryTypeCount << std::endl;
+	std::cout << "\tNumber of memory heaps: " << properties.memoryHeapCount << std::endl;
+	std::cout << "\n\tMemory heaps: " << std::endl;
+	for(size_t i = 0; i < properties.memoryHeapCount; i++)
+	{
+		std::cout << "\t\tHeap " << i << ": size is " << properties.memoryHeaps[i].size << " bytes." << std::endl;
+		std::cout << "\t\tHeap " << i << " flags: " << memory_heap_flags_to_string(properties.memoryHeaps[i].flags) << std::endl;
+	}
+	std::cout << "\n\tMemory types: " << std::endl;
+	for(size_t i = 0; i < properties.memoryTypeCount; i++)
+	{
+		std::cout << "\t\tType " << i << ": heap index is " << properties.memoryTypes[i].heapIndex << "." << std::endl;
+		std::cout << "\t\tType " << i << " flags: " << memory_type_flags_to_string(properties.memoryTypes[i].propertyFlags) << std::endl;
+	}
+}
+
 //Returns the index of a suitable memory type.
 //Every memory type also contains a memory heap, so we don't need to look for one of those seperately.
 static uint32_t find_suitable_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties)
@@ -50,7 +136,13 @@ static uint32_t find_suitable_memory_type(uint32_t type_filter, VkMemoryProperty
 		}
 	}
 	
-	std::cerr << "[VK|ERR] Couldn't find suitable memory type for requested allocation." << std::endl;
+	std::cerr << "[ALLOC|ERR] Couldn't find suitable memory type for requested allocation." << std::endl;
+	std::cerr << "\tRequested allocation type: " << requested_allocation_to_string(requested_allocation_type) << "." << std::endl;
+	std::cerr << "\tAllowed memory types: " << memory_type_filter_to_string(type_filter) << "." << std::endl;
+	std::cerr << "\tRequested memory properties: " << memory_type_flags_to_string(properties) << "." << std::endl;
+	std::cerr << "Note: available memory types and heaps are as follows:" << std::endl;
+	print_physical_device_memory_properties(memory_properties);
+
 	return UINT32_MAX;
 }
 
@@ -127,6 +219,7 @@ bool create_new_memory_page(uint32_t memory_type_index)
 bool find_page_space(VkMemoryRequirements memory_requirements, uint32_t memory_properties, size_t* page_index, size_t* page_memory_offset, size_t* freelist_index)
 {
 	uint32_t memory_type_index = find_suitable_memory_type(memory_requirements.memoryTypeBits, memory_properties);
+	if(memory_type_index == UINT32_MAX) return false;
 
 	if(memory_requirements.size >= DEFAULT_PAGE_SIZE)
 	{
@@ -259,6 +352,9 @@ bool allocate_image(alloc::image* image, uint16_t width, uint16_t height, VkForm
 	img.allocation_size = mem_req.size;
 	img.page_index = page;
 	img.page_offset = memory_offset;
+	img.vk_format = image_format;
+	img.width = width;
+	img.height = height;
 	vkBindImageMemory(get_device(), img.vk_image, mem_pages[page].memory, memory_offset);
 
 	fill_memory(mem_req.size, memory_offset, page, freelist_index);
@@ -534,6 +630,11 @@ void alloc::free(image img)
 	debug_print_page_freelist(page);
 }
 
+VkDeviceMemory alloc::get_memory_page(uint16_t index)
+{
+	return mem_pages[index].memory;
+}
+
 VkBuffer alloc::get_staging_buffer()
 {
 	return alloc_stage_buffer;
@@ -612,6 +713,7 @@ bool alloc::new_buffer(buffer* buf, void* data, VkDeviceSize size, uint32_t usag
 
 bool alloc::new_buffer(buffer* buffer, VkDeviceSize size, uint32_t usage)
 {
+	requested_allocation_type = usage;
 	char* data = new char[size];
 
 	for(VkDeviceSize i = 0; i < size; i++)
@@ -624,14 +726,20 @@ bool alloc::new_buffer(buffer* buffer, VkDeviceSize size, uint32_t usage)
 	return ret;
 }
 
-bool alloc::new_image(image* image, uint16_t width, uint16_t height, VkFormat image_format, VkImageUsageFlags usage)
+bool alloc::new_image(image* image, uint16_t width, uint16_t height, VkFormat image_format, uint32_t usage)
 {
+	requested_allocation_type = usage;
+
 	switch(usage)
 	{
 		case ALLOC_USAGE_TEXTURE:
 			return allocate_image(image, width, height, image_format, PAGE_MEMORY_TYPE_DEVICE_LOCAL, USAGE_STAGED_SAMPLED_IMAGE);
 		case ALLOC_USAGE_DEPTH_ATTACHMENT:
 			return allocate_image(image, width, height, image_format, PAGE_MEMORY_TYPE_DEVICE_LOCAL, USAGE_DEPTH_ATTACHMENT);
+		case ALLOC_USAGE_COLOR_ATTACHMENT:
+			return allocate_image(image, width, height, image_format, PAGE_MEMORY_TYPE_DEVICE_LOCAL, USAGE_COLOR_ATTACHMENT);
+		case ALLOC_USAGE_COLOR_ATTACHMENT_CPU_VISIBLE:
+			return allocate_image(image, width, height, image_format, PAGE_MEMORY_TYPE_HOST_AVAILABLE, USAGE_COLOR_ATTACHMENT);
 		default:
 			std::cerr << "[ALLOC|ERR] Image usage not supported: " << usage << std::endl;
 			break;

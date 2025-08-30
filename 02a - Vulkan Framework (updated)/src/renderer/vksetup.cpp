@@ -340,7 +340,7 @@ bool select_physical_device()
 		else if(device_props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) score += 1;
 		
 		queue_family qf = find_physical_device_queue_families(available_devices[i]);
-		if(!qf.queue_index_graphics.has_value() || !qf.queue_index_present.has_value() || !check_device_extension_support(available_devices[i]) || !device_feats.samplerAnisotropy)
+		if(!qf.queue_index_graphics.has_value() || !qf.queue_index_present.has_value() || !check_device_extension_support(available_devices[i]) || !device_feats.samplerAnisotropy || !device_feats.fillModeNonSolid || !device_feats.wideLines)
 			score = 0;
 		
 		swapchain_properties sc_props = query_swapchain_properties(available_devices[i]);
@@ -395,6 +395,8 @@ bool init_vulkan_device()
 	
 	VkPhysicalDeviceFeatures device_features{};
 	device_features.samplerAnisotropy = VK_TRUE;
+	device_features.fillModeNonSolid = VK_TRUE;
+	device_features.wideLines = VK_TRUE;
 	
 	VkDeviceCreateInfo info_device{};
 	info_device.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
