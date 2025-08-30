@@ -1,7 +1,6 @@
 # 0de's Vulkan Framework
 
 ## Pre 0.5
----
 **v0.1** - This version is retroactively used to mark the simplest triangle demo used in experiment 1, with the basic abstraction found in 1a. For the current codebase, this version of the framework was completed in mid-July 2025.
 
 **v0.2** - This version is retroactively used to mark the introduction of vertex and index buffers to the framework, each with singular memory allocations. This version of the framework was completed two days after v0.1.
