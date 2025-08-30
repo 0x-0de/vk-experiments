@@ -13,6 +13,10 @@ Here's a list of the completed and in-progress projects I have so far:
 
 **2:** "Vulkan Framework" - A more complete Vulkan framework than what was in 1a. Includes support for drawing commands using vertex & index buffers, as well as types of uniforms like uniform buffers and 2D image samplers. I wrote my own memory allocator for this.
 
+**2a:** "Vulkan Framework (updated)" - An updated version of experiment 2. This version of the framework will continue to be updated as future versions of the framework release.
+
+**3:** - "Voxel Engine" - A simple voxel engine mirroring the ones I used to create a lot back when I was learning OpenGL (and C++ in general).
+
 It's worth noting that this repository isn't just a source for code, but also my notes and documentation regarding Vulkan and the projects I'm developing. I'm mentioning this because while certain projects (such as the first "Hello Triangle") might be complete code-wise, I may still update the documentation I have for these projects and even the code comments as my understanding of the Vulkan process improves.
 
 Also, as I get better and better with Vulkan, the experiments themselves may pivot towards other topics that are often interlinked with graphics, such as physical simulations or algorithm visualizers.
