@@ -11,7 +11,7 @@ camera3d::camera3d(math::vec pos) : pos(pos)
     }
     else usable = true;
 
-    rot = math::vec3(0, 0, -1);
+    rot = math::vec3(0, 0, 1);
 
     rot_x = 0;
     rot_y = 0;

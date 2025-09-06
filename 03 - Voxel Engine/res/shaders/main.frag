@@ -4,6 +4,7 @@ layout(location = 0) out vec4 color;
 layout(location = 0) in vec3 f_pos;
 layout(location = 1) in vec3 f_color;
 layout(location = 2) in vec2 f_tex;
+layout(location = 3) flat in uvec4 f_selection;
 
 #define EPSILON 0.0001
 
@@ -156,5 +157,53 @@ void main()
 	vec3 r = get_random_color();
 	vec3 sr = get_smooth_random_color();
 	
+	int sel_x = int (round(f_selection.x)) >> 16;
+	int sel_y = (int (round(f_selection.x)) >> 8) & 255;
+	int sel_z = int (round(f_selection.x)) & 255;
+
+	float s_x = float (sel_x);
+	float s_y = float (sel_y);
+	float s_z = float (sel_z);
+	
     color = vec4((vec3(0.27, 0.9, 0.2) + r + sr) * light, 1);
+	
+	/*
+	float p_x = f_pos.x + EPSILON - floor(f_pos.x + EPSILON);
+	float p_y = f_pos.y + EPSILON - floor(f_pos.y + EPSILON);
+	float p_z = f_pos.z + EPSILON - floor(f_pos.z + EPSILON);
+
+	color = vec4(p_x, p_y, p_z, 1);
+	*/
+
+	if(f_pos.x >= s_x - EPSILON && f_pos.y >= s_y - EPSILON && f_pos.z >= s_z - EPSILON && f_pos.x <= s_x + 1 + EPSILON && f_pos.y < s_y + 1 + EPSILON && f_pos.z < s_z + 1 + EPSILON)
+	{
+		color += vec4(0.15, 0.15, 0.15, 0);
+	}
+
+	/*
+	if(f_selection.w != 0)
+	{
+		switch(face)
+		{
+			case FACE_LEFT:
+			case FACE_RIGHT:
+				
+			break;
+			case FACE_BOTTOM:
+			case FACE_TOP:
+				if(f_pos.x >= s_x && f_pos.y >= s_y && f_pos.z >= s_z && f_pos.x < s_x + 1 && f_pos.y <= s_y + 1 && f_pos.z < s_z + 1)
+				{
+					color += vec4(0.15, 0.15, 0.15, 0);
+				}
+			break;
+			case FACE_FRONT:
+			case FACE_BACK:
+				if(f_pos.x >= s_x && f_pos.y >= s_y && f_pos.z >= s_z && f_pos.x < s_x + 1 && f_pos.y < s_y + 1 && f_pos.z <= s_z + 1)
+				{
+					color += vec4(0.15, 0.15, 0.15, 0);
+				}
+			break;
+		}
+	}
+	*/
 }

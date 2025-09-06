@@ -121,7 +121,7 @@ VkExtent2D choose_swapchain_extent(GLFWwindow* window, swapchain_properties prop
 }
 
 bool swapchain::create_framebuffer(VkFramebuffer* framebuffer, render_pass* rp, std::vector<VkImageView> views, VkExtent2D extent)
-{	
+{		
 	VkFramebufferCreateInfo info_framebuffer{};
 	info_framebuffer.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 	info_framebuffer.renderPass = rp->get_handle();
@@ -130,7 +130,7 @@ bool swapchain::create_framebuffer(VkFramebuffer* framebuffer, render_pass* rp, 
 	info_framebuffer.width = extent.width;
 	info_framebuffer.height = extent.height;
 	info_framebuffer.layers = 1;
-
+	
 	VkResult r = vkCreateFramebuffer(get_device(), &info_framebuffer, nullptr, framebuffer);
 	VERIFY(r, "Failed to create swapchain framebuffer.")
 	return true;
@@ -146,10 +146,8 @@ swapchain::~swapchain()
 {	
 	for(uint32_t i = 0; i < image_views.size(); i++)
 	{
-		delete frame_finished[i];
-		
+		delete frame_finished[i];		
 		delete render_finished[i];
-		//delete image_retrieved[i];
 	}
 
 	delete image_retrieved;
@@ -259,6 +257,7 @@ bool swapchain::create_swap_chain()
 
 	viewport = get_default_viewport();
 	scissor = get_full_scissor();
+	
 #ifdef DEBUG_PRINT_SUCCESS
 	vkGetSwapchainImagesKHR(get_device(), vk_swapchain, &image_count, nullptr);
 	if(success)
@@ -478,7 +477,7 @@ bool swapchain::image_render(VkQueue queue, command_buffer* buffer)
 void swapchain::refresh_swap_chain()
 {
 	vkDeviceWaitIdle(get_device()); //Waits for all queues to finish what they're doing...
-
+	
 	destroy_swap_chain();
 	create_swap_chain();
 

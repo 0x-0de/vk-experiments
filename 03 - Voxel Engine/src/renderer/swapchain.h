@@ -55,14 +55,14 @@ class swapchain
 		void image_present(VkQueue queue);
 		bool image_render(VkQueue queue, command_buffer* buffer);
 		
+		void refresh_swap_chain();
+		
 		void retrieve_next_image(uint32_t* frame_index, bool* should_retry);
 	private:
 		GLFWwindow* window;
 		
 		bool create_swap_chain();
 		void destroy_swap_chain();
-		
-		void refresh_swap_chain();
 		
 		bool init_image_views();
 		bool init_sync_objects();

@@ -12,10 +12,10 @@ texture::texture(void* data, uint32_t width, uint32_t height, VkFormat image_for
 {
     usable = alloc::new_image(&img, width, height, image_format, ALLOC_USAGE_TEXTURE);
 
-    if(usable) usable = utils::transition_image_layout(&img, image_format, TEXTURE_IMAGE_ASPECT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    if(usable) usable = utils::transition_image_layout(&img, TEXTURE_IMAGE_ASPECT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 	if(usable) alloc::map_to_staging(data, width * height * 4);
 	if(usable) usable = alloc::copy_data_to_image(&img, data, width, height, 1, TEXTURE_IMAGE_ASPECT);
-	if(usable) usable = utils::transition_image_layout(&img, image_format, TEXTURE_IMAGE_ASPECT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	if(usable) usable = utils::transition_image_layout(&img, TEXTURE_IMAGE_ASPECT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     if(usable) usable = utils::create_image_view(&image_view, img.vk_image, image_format, VK_IMAGE_ASPECT_COLOR_BIT);
 

@@ -61,7 +61,7 @@ void command_buffer::begin_render_pass(render_pass* rp, VkFramebuffer framebuffe
 
 	VkClearValue clear_values[2];
 
-	clear_values[0] = {{{0, 0, 0, 1}}};
+	clear_values[0] = {{{0, 0, 0, 0}}};
 	clear_values[1] = {};
 	clear_values[1].depthStencil = {1, 0};
 

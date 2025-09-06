@@ -3,6 +3,11 @@
 #include <fstream>
 #include <iostream>
 
+bool utils::create_image_view(VkImageView* image_view, alloc::image img, VkImageAspectFlags aspect)
+{
+	return create_image_view(image_view, img.vk_image, img.vk_format, aspect);
+}
+
 bool utils::create_image_view(VkImageView* image_view, VkImage image, VkFormat format, VkImageAspectFlags aspect)
 {
     VkImageViewCreateInfo info_image_view{};
@@ -224,13 +229,14 @@ bool utils::read_pixel(alloc::image* image, uint32_t x, uint32_t y, void* data)
 	return true;
 }
 
-bool utils::transition_image_layout(alloc::image* image, VkFormat format, VkImageAspectFlags aspect, VkImageLayout old_layout, VkImageLayout new_layout)
+bool utils::transition_image_layout(alloc::image* image, VkImageAspectFlags aspect, VkImageLayout old_layout, VkImageLayout new_layout)
 {
-    return transition_image_layout(image, alloc::get_staging_command_pool(), alloc::get_staging_queue(), format, aspect, old_layout, new_layout);
+    return transition_image_layout(image, alloc::get_staging_command_pool(), alloc::get_staging_queue(), aspect, old_layout, new_layout);
 }
 
-bool utils::transition_image_layout(alloc::image* image, VkCommandPool command_pool, VkQueue queue, VkFormat format, VkImageAspectFlags aspect, VkImageLayout old_layout, VkImageLayout new_layout)
+bool utils::transition_image_layout(alloc::image* image, VkCommandPool command_pool, VkQueue queue, VkImageAspectFlags aspect, VkImageLayout old_layout, VkImageLayout new_layout)
 {
+	VkFormat format = image->vk_format;
     VkCommandBuffer command_buffer;
     
     VkCommandBufferAllocateInfo info_alloc{};
@@ -270,14 +276,38 @@ bool utils::transition_image_layout(alloc::image* image, VkCommandPool command_p
         src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     }
-    else if(old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+	else if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+	{
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		
+		src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+		dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	}
+	else if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+	{
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		
+		src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+		dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	}
+    else if(old_layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
     {
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
         src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     }
+	else if(old_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)
+	{
+		barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		
+		src_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+	}
     else
     {
         std::cerr << "[VK|ERR] Unsupported layout transition formats." << std::endl;
@@ -295,6 +325,8 @@ bool utils::transition_image_layout(alloc::image* image, VkCommandPool command_p
 
     vkQueueSubmit(queue, 1, &info_submit, VK_NULL_HANDLE);
     vkQueueWaitIdle(queue);
+	
+	image->vk_image_layout = new_layout;
 
     vkFreeCommandBuffers(get_device(), command_pool, 1, &command_buffer);
     return true;

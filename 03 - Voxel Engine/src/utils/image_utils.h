@@ -7,6 +7,7 @@
 
 namespace utils
 {
+	bool create_image_view(VkImageView* image_view, alloc::image img, VkImageAspectFlags aspect);
     bool create_image_view(VkImageView* image_view, VkImage image, VkFormat format, VkImageAspectFlags aspect);
 	
 	uint8_t get_format_pixel_size(VkFormat format);
@@ -16,8 +17,8 @@ namespace utils
 
     bool load_bmp_texture(const char* filepath, unsigned int* width, unsigned int* height, unsigned int* channels, char** data);
 
-    bool transition_image_layout(alloc::image* image, VkFormat format, VkImageAspectFlags aspect, VkImageLayout old_layout, VkImageLayout new_layout);
-    bool transition_image_layout(alloc::image* image, VkCommandPool command_pool, VkQueue queue, VkFormat format, VkImageAspectFlags aspect, VkImageLayout old_layout, VkImageLayout new_layout);
+    bool transition_image_layout(alloc::image* image, VkImageAspectFlags aspect, VkImageLayout old_layout, VkImageLayout new_layout);
+    bool transition_image_layout(alloc::image* image, VkCommandPool command_pool, VkQueue queue, VkImageAspectFlags aspect, VkImageLayout old_layout, VkImageLayout new_layout);
 	
 	bool read_pixel(alloc::image* image, uint32_t x, uint32_t y, void* data);
 }

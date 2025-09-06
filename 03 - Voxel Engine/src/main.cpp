@@ -20,21 +20,27 @@
 
 #include <cmath>
 
+#define INFO_LOG(x) std::cout << "[VOX|INF] " << x << std::endl
+
 #define GLFW_DEFAULT_WIDTH 1280
 #define GLFW_DEFAULT_HEIGHT 720
 
 #define SHADER_MODULES_COUNT 6
 #define COMMAND_POOLS_COUNT 1
 #define VULKAN_QUEUES_COUNT 2
-#define PIPELINES_COUNT 3
+#define RENDER_PASS_COUNT 2
+#define PIPELINES_COUNT 4
 #define RENDER_TARGETS_COUNT 3
+#define FRAMEBUFFERS_COUNT 1
 
 static VkShaderModule shader_modules[SHADER_MODULES_COUNT];
 static VkCommandPool command_pools[COMMAND_POOLS_COUNT];
 static VkQueue queues[VULKAN_QUEUES_COUNT];
+static render_pass* render_passes[RENDER_PASS_COUNT];
 static pipeline* pipelines[PIPELINES_COUNT];
 static alloc::image render_targets[RENDER_TARGETS_COUNT];
 static VkImageView render_target_views[RENDER_TARGETS_COUNT];
+static VkFramebuffer target_framebuffers[FRAMEBUFFERS_COUNT];
 
 #define SHADER_VERTEX_MAIN 0
 #define SHADER_FRAGMENT_MAIN 1
@@ -42,6 +48,9 @@ static VkImageView render_target_views[RENDER_TARGETS_COUNT];
 #define SHADER_FRAGMENT_WIREFRAME 3
 #define SHADER_VERTEX_SELECTION 4
 #define SHADER_FRAGMENT_SELECTION 5
+
+#define RENDER_PASS_MAIN 0
+#define RENDER_PASS_SELECTION 1
 
 #define PIPELINE_MAIN 0
 #define PIPELINE_WIREFRAME 1
@@ -55,7 +64,21 @@ static VkImageView render_target_views[RENDER_TARGETS_COUNT];
 #define RENDER_TARGET_SELECTION_BUFFER 1
 #define RENDER_TARGET_SELECTION_DEPTH_BUFFER 2
 
+#define FRAMEBUFFER_SELECTION 0
+
 static camera3d* camera;
+
+static uint32_t voxel_selection_data[4];
+static bool window_resized = false;
+
+#define SELECTION_BUFFER_FORMAT VK_FORMAT_R32G32B32A32_UINT
+
+static alloc::buffer selection_image_read;
+
+void window_resize_callback(GLFWwindow* window, int width, int height)
+{
+	window_resized = true;
+}
 
 bool load_shaders()
 {	
@@ -77,7 +100,44 @@ void unload_shaders()
 		vkDestroyShaderModule(get_device(), shader_modules[i], nullptr);
 }
 
-bool load_graphics_pipelines(swapchain* sc, pipeline_vertex_input pvi, descriptor* desc, render_pass* rp_main, render_pass* rp_selection)
+bool load_render_passes(swapchain* sc)
+{
+	for(size_t i = 0; i < RENDER_PASS_COUNT; i++)
+		render_passes[i] = new render_pass();
+
+	VkFormat depth_format;
+	if(!utils::find_best_depth_format(&depth_format)) std::cout << "How did we get here?" << std::endl;
+	
+	render_passes[RENDER_PASS_MAIN]->add_attachment(render_pass::create_render_pass_attachment_default_color(sc->get_format().format));
+	render_passes[RENDER_PASS_MAIN]->add_attachment(render_pass::create_render_pass_attachment_default_depth(depth_format));
+	
+	render_pass_attachment rpa_selection_color = render_pass::create_render_pass_attachment_default_color(SELECTION_BUFFER_FORMAT);
+	rpa_selection_color.final_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	
+	render_passes[RENDER_PASS_SELECTION]->add_attachment(rpa_selection_color);
+	render_passes[RENDER_PASS_SELECTION]->add_attachment(render_pass::create_render_pass_attachment_default_depth(depth_format));
+	
+	subpass sp{};
+	sp.pipeline_bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	sp.color_attachment_indices = {0};
+	sp.depth_attachment_index = 1;
+	
+	render_passes[RENDER_PASS_MAIN]->add_subpass(sp);
+	render_passes[RENDER_PASS_SELECTION]->add_subpass(sp);
+	
+	if(!render_passes[RENDER_PASS_MAIN]->build()) return false;
+	if(!render_passes[RENDER_PASS_SELECTION]->build()) return false;
+	
+	return true;
+}
+
+void unload_render_passes()
+{
+	for(size_t i = 0; i < RENDER_PASS_COUNT; i++)
+		delete render_passes[i];
+}
+
+bool load_graphics_pipelines(swapchain* sc, pipeline_vertex_input pvi, descriptor* desc)
 {
 	for(size_t i = 0; i < PIPELINES_COUNT; i++)
 		pipelines[i] = new pipeline();
@@ -91,7 +151,7 @@ bool load_graphics_pipelines(swapchain* sc, pipeline_vertex_input pvi, descripto
 	pipelines[PIPELINE_MAIN]->add_descriptor_set_layout(desc->get_descriptor_set_layout());
 	pipelines[PIPELINE_MAIN]->set_pipeline_depth_stencil_state(create_simple_depth_test_state());
 		
-	if(!pipelines[PIPELINE_MAIN]->build(rp_main)) return false;
+	if(!pipelines[PIPELINE_MAIN]->build(render_passes[RENDER_PASS_MAIN])) return false;
 
 	pipelines[PIPELINE_WIREFRAME]->add_shader_module(shader_modules[SHADER_VERTEX_WIREFRAME], VK_SHADER_STAGE_VERTEX_BIT, "main");
 	pipelines[PIPELINE_WIREFRAME]->add_shader_module(shader_modules[SHADER_FRAGMENT_WIREFRAME], VK_SHADER_STAGE_FRAGMENT_BIT, "main");
@@ -108,7 +168,7 @@ bool load_graphics_pipelines(swapchain* sc, pipeline_vertex_input pvi, descripto
 	
 	pipelines[PIPELINE_WIREFRAME]->set_pipeline_rasterization_state(info_raster);
 		
-	if(!pipelines[PIPELINE_WIREFRAME]->build(rp_main)) return false;
+	if(!pipelines[PIPELINE_WIREFRAME]->build(render_passes[RENDER_PASS_MAIN])) return false;
 	
 	pipelines[PIPELINE_SELECTION_DEBUG]->add_shader_module(shader_modules[SHADER_VERTEX_SELECTION], VK_SHADER_STAGE_VERTEX_BIT, "main");
 	pipelines[PIPELINE_SELECTION_DEBUG]->add_shader_module(shader_modules[SHADER_FRAGMENT_SELECTION], VK_SHADER_STAGE_FRAGMENT_BIT, "main");
@@ -119,21 +179,19 @@ bool load_graphics_pipelines(swapchain* sc, pipeline_vertex_input pvi, descripto
 	pipelines[PIPELINE_SELECTION_DEBUG]->add_descriptor_set_layout(desc->get_descriptor_set_layout());
 	pipelines[PIPELINE_SELECTION_DEBUG]->set_pipeline_depth_stencil_state(create_simple_depth_test_state());
 		
-	if(!pipelines[PIPELINE_SELECTION_DEBUG]->build(rp_main)) return false;
-	
-	/*
+	if(!pipelines[PIPELINE_SELECTION_DEBUG]->build(render_passes[RENDER_PASS_MAIN])) return false;
+		
 	pipelines[PIPELINE_SELECTION]->add_shader_module(shader_modules[SHADER_VERTEX_SELECTION], VK_SHADER_STAGE_VERTEX_BIT, "main");
 	pipelines[PIPELINE_SELECTION]->add_shader_module(shader_modules[SHADER_FRAGMENT_SELECTION], VK_SHADER_STAGE_FRAGMENT_BIT, "main");
-	
+		
 	pipelines[PIPELINE_SELECTION]->add_viewport(sc->get_default_viewport(), sc->get_full_scissor());
 	pipelines[PIPELINE_SELECTION]->add_color_blend_state(get_color_blend_attachment_none());
 	pipelines[PIPELINE_SELECTION]->set_pipeline_vertex_input_state(pvi);
 	pipelines[PIPELINE_SELECTION]->add_descriptor_set_layout(desc->get_descriptor_set_layout());
 	pipelines[PIPELINE_SELECTION]->set_pipeline_depth_stencil_state(create_simple_depth_test_state());
+				
+	if(!pipelines[PIPELINE_SELECTION]->build(render_passes[RENDER_PASS_SELECTION])) return false;
 		
-	if(!pipelines[PIPELINE_SELECTION]->build(rp_selection)) return false;
-	*/
-	
 	return true;
 }
 
@@ -178,12 +236,15 @@ bool load_render_targets(swapchain* sc)
 	if(!utils::find_best_depth_format(&depth_format)) return false;
 
 	if(!alloc::new_image(&render_targets[RENDER_TARGET_DEPTH_BUFFER], sc->get_extent().width, sc->get_extent().height, depth_format, ALLOC_USAGE_DEPTH_ATTACHMENT)) return false;
-	if(!alloc::new_image(&render_targets[RENDER_TARGET_SELECTION_BUFFER], sc->get_extent().width, sc->get_extent().height, VK_FORMAT_R32G32B32A32_SFLOAT, ALLOC_USAGE_COLOR_ATTACHMENT)) return false;
+	if(!alloc::new_image(&render_targets[RENDER_TARGET_SELECTION_BUFFER], sc->get_extent().width, sc->get_extent().height, SELECTION_BUFFER_FORMAT, ALLOC_USAGE_COLOR_ATTACHMENT)) return false;
 	if(!alloc::new_image(&render_targets[RENDER_TARGET_SELECTION_DEPTH_BUFFER], sc->get_extent().width, sc->get_extent().height, depth_format, ALLOC_USAGE_DEPTH_ATTACHMENT)) return false;
 
 	if(!utils::create_image_view(&render_target_views[RENDER_TARGET_DEPTH_BUFFER], render_targets[RENDER_TARGET_DEPTH_BUFFER].vk_image, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT)) return false;
-	if(!utils::create_image_view(&render_target_views[RENDER_TARGET_SELECTION_BUFFER], render_targets[RENDER_TARGET_SELECTION_BUFFER].vk_image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT)) return false;
+	if(!utils::create_image_view(&render_target_views[RENDER_TARGET_SELECTION_BUFFER], render_targets[RENDER_TARGET_SELECTION_BUFFER].vk_image, SELECTION_BUFFER_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT)) return false;
 	if(!utils::create_image_view(&render_target_views[RENDER_TARGET_SELECTION_DEPTH_BUFFER], render_targets[RENDER_TARGET_SELECTION_DEPTH_BUFFER].vk_image, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT)) return false;
+	
+	uint32_t pixel_size = sc->get_extent().width * sc->get_extent().height * 4 * sizeof(uint32_t);
+	if(!alloc::new_buffer(&selection_image_read, pixel_size, ALLOC_USAGE_GENERIC_BUFFER_CPU_VISIBLE)) return 1;
 
 	return true;
 }
@@ -195,6 +256,8 @@ void unload_render_targets()
 		vkDestroyImageView(get_device(), render_target_views[i], nullptr);
 		alloc::free(render_targets[i]);
 	}
+	
+	alloc::free(selection_image_read);
 }
 
 void update_uniforms(uint16_t descriptor_set, double time, descriptor* desc, float width, float height)
@@ -216,21 +279,17 @@ void update_uniforms(uint16_t descriptor_set, double time, descriptor* desc, flo
 	desc->place_data(descriptor_set, 0, 0, 16 * sizeof(float), transform_data);
 	desc->place_data(descriptor_set, 0, 16 * sizeof(float), 16 * sizeof(float), projection_data);
 	desc->place_data(descriptor_set, 0, 32 * sizeof(float), 16 * sizeof(float), view_data);
+	desc->place_data(descriptor_set, 0, 48 * sizeof(float), 4 * sizeof(uint32_t), voxel_selection_data);
 }
 
 void swapchain_resize_callback(swapchain* sc)
 {
-	std::cout << "Recreating depth buffer..." << std::endl;
-
-	VkFormat depth_format;
-	if(!utils::find_best_depth_format(&depth_format)) std::cout << "How did we get here?" << std::endl;
+	vkDestroyFramebuffer(get_device(), target_framebuffers[FRAMEBUFFER_SELECTION], nullptr);
+	unload_render_targets();
 	
-	vkDestroyImageView(get_device(), render_target_views[RENDER_TARGET_DEPTH_BUFFER], nullptr);
-	alloc::free(render_targets[RENDER_TARGET_DEPTH_BUFFER]);
-
-	if(!alloc::new_image(&render_targets[RENDER_TARGET_DEPTH_BUFFER], sc->get_extent().width, sc->get_extent().height, depth_format, ALLOC_USAGE_DEPTH_ATTACHMENT)) throw std::runtime_error("Failed to recreate depth buffer upon swapchain resize.");
-
-	if(!utils::create_image_view(&render_target_views[RENDER_TARGET_DEPTH_BUFFER], render_targets[RENDER_TARGET_DEPTH_BUFFER].vk_image, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT)) throw std::runtime_error("Failed to recreate depth buffer upon swapchain resize.");
+	load_render_targets(sc);
+	
+	if(!swapchain::create_framebuffer(&target_framebuffers[FRAMEBUFFER_SELECTION], render_passes[RENDER_PASS_SELECTION], {render_target_views[RENDER_TARGET_SELECTION_BUFFER], render_target_views[RENDER_TARGET_SELECTION_DEPTH_BUFFER]}, sc->get_extent())) std::cout << "How tf did we get here?" << std::endl;
 
 	sc->clear_swapchain_render_targets();
 	sc->add_swapchain_render_target(render_target_views[RENDER_TARGET_DEPTH_BUFFER]);
@@ -245,47 +304,35 @@ int main()
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 	
 	GLFWwindow* window = glfwCreateWindow(GLFW_DEFAULT_WIDTH, GLFW_DEFAULT_HEIGHT, "Voxel Engine", NULL, NULL);
+	glfwSetFramebufferSizeCallback(window, window_resize_callback);
 	
+	INFO_LOG("Initializing Vulkan.");
 	if(!init_vulkan_application(window)) return 1;
 	
+	INFO_LOG("Loading Vulkan command pools and queues.");
 	if(!load_command_pools()) return 1;
 	get_vulkan_queues();
 	
+	INFO_LOG("Initializing memory allocator.");
 	alloc::init(queues[QUEUE_GRAPHICS], command_pools[0]);
 
+	INFO_LOG("Initializing Vulkan swapchain and render targets.");
 	swapchain* sc = new swapchain(window);
 	sc->add_swapchain_resize_callback(swapchain_resize_callback);
 	if(!load_render_targets(sc)) return 1;
 	sc->add_swapchain_render_target(render_target_views[RENDER_TARGET_DEPTH_BUFFER]);
 
-	render_pass* rp_main = new render_pass();
-	//render_pass* rp_selection = new render_pass();
-
-	VkFormat depth_format;
-	if(!utils::find_best_depth_format(&depth_format)) std::cout << "How did we get here?" << std::endl;
+	INFO_LOG("Creating necessary render passes.");
+	if(!load_render_passes(sc)) return 1;
 	
-	rp_main->add_attachment(render_pass::create_render_pass_attachment_default_color(sc->get_format().format));
-	rp_main->add_attachment(render_pass::create_render_pass_attachment_default_depth(depth_format));
-	
-	//rp_selection->add_attachment(render_pass::create_render_pass_attachment_default_color(VK_FORMAT_R32G32B32A32_SFLOAT));
-	//rp_selection->add_attachment(render_pass::create_render_pass_attachment_default_depth(depth_format));
-	
-	subpass sp{};
-	sp.pipeline_bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
-	sp.color_attachment_indices = {0};
-	sp.depth_attachment_index = 1;
-	rp_main->add_subpass(sp);
-	//rp_selection->add_subpass(sp);
-	
-	rp_main->build();
-	//rp_selection->build();
-	
-	//VkFramebuffer fb_selection;
-	//if(!swapchain::create_framebuffer(&fb_selection, rp_selection, {selection_buffer_view, selection_depth_buffer_view}, sc->get_extent())) return 1;
+	INFO_LOG("Creating Vulkan framebuffers.");
+	if(!swapchain::create_framebuffer(&target_framebuffers[FRAMEBUFFER_SELECTION], render_passes[RENDER_PASS_SELECTION], {render_target_views[RENDER_TARGET_SELECTION_BUFFER], render_target_views[RENDER_TARGET_SELECTION_DEPTH_BUFFER]}, sc->get_extent())) return 1;
 
 	uint32_t frame_count = sc->get_image_count();
 	
-	if(!sc->create_framebuffers(rp_main)) return 1;
+	if(!sc->create_framebuffers(render_passes[RENDER_PASS_MAIN])) return 1;
+	
+	INFO_LOG("Loading shaders.");
 	if(!load_shaders()) return 1;
 	
 	pipeline_vertex_input pvi;
@@ -295,31 +342,33 @@ int main()
 	pvi.vertex_attribs[1] = create_vertex_input_attribute(0, 1, VK_FORMAT_R32G32B32_SFLOAT, 3 * sizeof(float));
 	pvi.vertex_attribs[2] = create_vertex_input_attribute(0, 2, VK_FORMAT_R32G32_SFLOAT, 6 * sizeof(float));
 
-	uint32_t img_width, img_height, img_channels;
-	char* img_data;
-	if(!utils::load_bmp_texture("../res/textures/smile.bmp", &img_width, &img_height, &img_channels, &img_data)) return 1;
-
+	INFO_LOG("Loading descriptor sets.");
 	descriptor* desc = new descriptor(frame_count);
 
-	desc->add_descriptor_binding_buffer(48 * sizeof(float), VK_SHADER_STAGE_VERTEX_BIT);
+	desc->add_descriptor_binding_buffer(52 * sizeof(float), VK_SHADER_STAGE_VERTEX_BIT);
 
 	desc->build();
 	
-	if(!load_graphics_pipelines(sc, pvi, desc, rp_main, nullptr)) return 1;
+	INFO_LOG("Loading Vulkan graphics pipelines.");
+	if(!load_graphics_pipelines(sc, pvi, desc)) return 1;
 	unload_shaders();
 	
 	uint32_t num_images = sc->get_image_count();
 	
+	INFO_LOG("Creating command buffers.");
 	command_buffer** cmd_buffer = new command_buffer*[num_images];
 	for(size_t i = 0; i < num_images; i++)
 		cmd_buffer[i] = new command_buffer(command_pools[0]);
 
-	camera = new camera3d(math::vec3(128, 160, 128));
+	INFO_LOG("Creating 3D camera.");
+	camera = new camera3d(math::vec3(32, 40, 32));
 	
-	sector::init();
+	sector::init(glfwGetTime() * 1000000000);
 	
 	sector* sec = new sector(0, 0, 0);
+	INFO_LOG("Generating sector.");
 	sec->generate();
+	INFO_LOG("Loading sector.");
 	sec->build();
 	
 	double timer = glfwGetTime();
@@ -329,19 +378,32 @@ int main()
 	double update_time = 0;
 
 	bool window_focused = false;
+	bool should_rotate_camera = false;
 	
 	uint8_t current_pipeline = PIPELINE_MAIN;
 	bool pipeline_toggle = false;
 	
 	//semaphore* sp_selection_buffer = new semaphore();
-	//fence* fnc_selection_buffer = new fence();
-
+	fence* fnc_selection_buffer = new fence();
+	
+	int voxel_timer = 0;
+	
 	while(!glfwWindowShouldClose(window))
 	{
 		double delta = glfwGetTime() - delta_timer;
 		delta_timer = glfwGetTime();
 
 		update_time += delta;
+		
+		int window_width, window_height;
+		glfwGetFramebufferSize(window, &window_width, &window_height);
+		
+		if(window_resized)
+		{
+			if(sc->get_extent().width != window_width || sc->get_extent().height != window_height)
+				sc->refresh_swap_chain();
+			window_resized = false;
+		}
 
 		if(glfwGetTime() - timer >= 1.0)
 		{
@@ -350,16 +412,40 @@ int main()
 			timer = glfwGetTime();
 		}
 		glfwPollEvents();
+		
+		double cursor_x_raw, cursor_y_raw;
+		glfwGetCursorPos(window, &cursor_x_raw, &cursor_y_raw);
+		
+		int cursor_x = (int) cursor_x_raw;
+		int cursor_y = (int) cursor_y_raw;
 
 		if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_1))
 		{
-			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 			window_focused = true;
 		}
 		else if(glfwGetKey(window, GLFW_KEY_ESCAPE))
 		{
-			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+			
 			window_focused = false;
+		}
+		
+		if(window_focused)
+		{
+			if(glfwGetKey(window, GLFW_KEY_LEFT_ALT))
+			{
+				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+				should_rotate_camera = false;
+			}
+			else
+			{
+				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+				should_rotate_camera = true;
+			}
+		}
+		else
+		{
+			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+			should_rotate_camera = false;
 		}
 		
 		if(glfwGetKey(window, GLFW_KEY_F) && !pipeline_toggle)
@@ -389,10 +475,16 @@ int main()
 
 		update_uniforms(frame_index, update_time, desc, sc->get_viewport().width, sc->get_viewport().height);
 		
-		/*
+		VkCommandBuffer command_buffers[] = {cmd_buffer[frame_index]->get_handle()};
+		
+		VkSubmitInfo info_submit_generic{};
+		info_submit_generic.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		info_submit_generic.commandBufferCount = 1;
+		info_submit_generic.pCommandBuffers = command_buffers;
+		
 		cmd_buffer[frame_index]->reset();
 		cmd_buffer[frame_index]->begin_recording();
-		cmd_buffer[frame_index]->begin_render_pass(rp_selection, fb_selection, sc->get_extent());
+		cmd_buffer[frame_index]->begin_render_pass(render_passes[RENDER_PASS_SELECTION], target_framebuffers[FRAMEBUFFER_SELECTION], sc->get_extent());
 		cmd_buffer[frame_index]->bind_pipeline(pipelines[PIPELINE_SELECTION]);
 		cmd_buffer[frame_index]->set_viewport(sc->get_viewport(), sc->get_scissor());
 		cmd_buffer[frame_index]->bind_descriptor_set(pipelines[PIPELINE_SELECTION]->get_layout(), desc->get_descriptor_set(sc->get_current_image_index()));
@@ -400,29 +492,28 @@ int main()
 		cmd_buffer[frame_index]->end_render_pass();
 		cmd_buffer[frame_index]->end_recording();
 		
-		VkSubmitInfo info_submit_sb{};
-		info_submit_sb.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		info_submit_sb.waitSemaphoreCount = 0;
-		info_submit_sb.signalSemaphoreCount = 0;
-		VkCommandBuffer command_buffers[] = {cmd_buffer[frame_index]->get_handle()};
-		info_submit_sb.commandBufferCount = 1;
-		info_submit_sb.pCommandBuffers = command_buffers;
-		
-		VkResult r = vkQueueSubmit(queues[QUEUE_GRAPHICS], 1, &info_submit_sb, fnc_selection_buffer->get_handle());
+		VkResult r = vkQueueSubmit(queues[QUEUE_GRAPHICS], 1, &info_submit_generic, fnc_selection_buffer->get_handle());
 		VERIFY_NORETURN(r, "Failed to submit command buffer to graphics queue.")
 		
 		fnc_selection_buffer->wait();
 		fnc_selection_buffer->reset();
 		
-		//float selection_data[4];
-		//utils::read_pixel(&selection_buffer, 0, 0, selection_data);
+		if(!alloc::copy_image_to_buffer(&render_targets[RENDER_TARGET_SELECTION_BUFFER], &selection_image_read, sc->get_extent().width, sc->get_extent().height, VK_IMAGE_ASPECT_COLOR_BIT)) return 1;
 		
-		//std::cout << selection_data[0] << ", " << selection_data[1] << ", " << selection_data[2] << ", " << selection_data[3] << std::endl;
-		*/
-
+		int selection_x = should_rotate_camera ? sc->get_extent().width / 2 : cursor_x;
+		int selection_y = should_rotate_camera ? sc->get_extent().height / 2 : cursor_y;
+		
+		int selection_offset = (selection_y * sc->get_extent().width + selection_x) * 4 * sizeof(float);
+				
+		if(selection_x >= sc->get_extent().width || selection_y >= sc->get_extent().height || selection_x < 0 || selection_y < 0)
+		{
+			voxel_selection_data[3] = 0;
+		}
+		else alloc::map_data_from_buffer(voxel_selection_data, &selection_image_read, selection_offset, 4 * sizeof(float));
+		
 		cmd_buffer[frame_index]->reset();
 		cmd_buffer[frame_index]->begin_recording();
-		cmd_buffer[frame_index]->begin_render_pass(rp_main, sc->get_framebuffer(frame_index), sc->get_extent());
+		cmd_buffer[frame_index]->begin_render_pass(render_passes[RENDER_PASS_MAIN], sc->get_framebuffer(frame_index), sc->get_extent());
 		cmd_buffer[frame_index]->bind_pipeline(pipelines[current_pipeline]);
 		cmd_buffer[frame_index]->set_viewport(sc->get_viewport(), sc->get_scissor());
 		cmd_buffer[frame_index]->bind_descriptor_set(pipelines[0]->get_layout(), desc->get_descriptor_set(sc->get_current_image_index()));
@@ -431,18 +522,79 @@ int main()
 		cmd_buffer[frame_index]->end_recording();
 
 		camera->freemove(window, delta * 2);
-		camera->update_rot(window, 1, window_focused);
+		camera->update_rot(window, 1, should_rotate_camera);
 		
 		if(!sc->image_render(queues[QUEUE_GRAPHICS], cmd_buffer[frame_index])) return 1;
 		sc->image_present(queues[QUEUE_PRESENT]);
+		
+		int voxel_x = ((int) voxel_selection_data[0]) >> 16;
+		int voxel_y = (((int) voxel_selection_data[0]) >> 8) & 255;
+		int voxel_z = ((int) voxel_selection_data[0]) & 255;
+		
+		int face = (int) voxel_selection_data[1];
+		
+		std::cout << voxel_x << ", " << voxel_y << ", " << voxel_z << " : " << face << std::endl;
+		
+		if(voxel_timer > 0)
+			voxel_timer--;
+		
+		if(window_focused && voxel_timer == 0)
+		{
+			if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_1))
+			{
+				switch(face)
+				{
+					case 0:
+					case 2:
+					case 4:
+						break;
+					case 1:
+						voxel_x -= 1;
+						break;
+					case 3:
+						voxel_y -= 1;
+						break;
+					case 5:
+						voxel_z -= 1;
+						break;
+				}
+				
+				sec->set(voxel_x, voxel_y, voxel_z, 0, true);
+			}
+			
+			if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_2))
+			{
+				switch(face)
+				{
+					case 1:
+					case 3:
+					case 5:
+						break;
+					case 0:
+						voxel_x -= 1;
+						break;
+					case 2:
+						voxel_y -= 1;
+						break;
+					case 4:
+						voxel_z -= 1;
+						break;
+				}
+				
+				sec->set(voxel_x, voxel_y, voxel_z, 1, true);
+			}
+			
+			voxel_timer = 25;
+		}
 
 		frames++;
 	}
 	
 	vkDeviceWaitIdle(get_device());
 	
-	//delete sp_selection_buffer;
-	
+	INFO_LOG("Unloading resources.");
+	delete fnc_selection_buffer;
+		
 	for(size_t i = 0; i < num_images; i++)
 	{
 		delete cmd_buffer[i];
@@ -452,11 +604,10 @@ int main()
 	delete camera;
 	delete[] cmd_buffer;
 	unload_graphics_pipelines();
-	delete[] img_data;
 	delete desc;
 	unload_command_pools();
-	//delete rp_selection;
-	delete rp_main;
+	vkDestroyFramebuffer(get_device(), target_framebuffers[FRAMEBUFFER_SELECTION], nullptr);
+	unload_render_passes();
 	unload_render_targets();
 	delete sc;
 	alloc::deinit();

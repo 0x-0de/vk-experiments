@@ -10,10 +10,10 @@
 #define USAGE_STAGED_VERTEX_BUFFER (VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
 #define USAGE_STAGED_INDEX_BUFFER (VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT)
 #define USAGE_STAGED_SAMPLED_IMAGE (VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
-#define USAGE_COLOR_ATTACHMENT VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+#define USAGE_COLOR_ATTACHMENT (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
 #define USAGE_DEPTH_ATTACHMENT VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
-
 #define USAGE_UNIFORM_BUFFER VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
+#define USAGE_GENERIC_CPU_ACCESS_BUFFER VK_BUFFER_USAGE_TRANSFER_DST_BIT
 
 #include <iostream>
 
@@ -233,10 +233,14 @@ bool find_page_space(VkMemoryRequirements memory_requirements, uint32_t memory_p
 	
 	for(size_t i = 0; i < mem_pages.size(); i++)
 	{
+	#ifdef DEBUG_ALLOC_PRINT
 		std::cout << "Scanning page " << i << "..." << std::endl;
+	#endif
 		if(mem_pages[i].memory_type_index != memory_type_index)
 		{
+		#ifdef DEBUG_ALLOC_PRINT
 			std::cout << "Skipped." << std::endl;
+		#endif
 			continue;
 		}
 		for(size_t j = 0; j < mem_pages[i].freelist.size(); j++)
@@ -293,12 +297,16 @@ bool allocate_buffer(alloc::buffer* buf, void* data, uint32_t memory_type, VkDev
 	VkMemoryRequirements mem_req;
 	vkGetBufferMemoryRequirements(get_device(), b.vk_buffer, &mem_req);
 	
-	std::cout << "Attempting an allocation of " << size << " (" << mem_req.size << ") bytes for a buffer." << std::endl;
+#ifdef DEBUG_ALLOC_PRINT
+	std::cout << "[ALLOC|INF] Attempting an allocation of " << size << " (" << mem_req.size << ") bytes for a buffer." << std::endl;
+#endif
 	
 	size_t page, memory_offset, freelist_index;
 	if(!find_page_space(mem_req, memory_type, &page, &memory_offset, &freelist_index)) return false;
-	
-	std::cout << "Space found: page " << page << ", offset: " << memory_offset << " bytes." << std::endl;
+
+#ifdef DEBUG_ALLOC_PRINT	
+	std::cout << "[ALLOC|INF] Space found: page " << page << ", offset: " << memory_offset << " bytes." << std::endl;
+#endif
 	
 	b.allocation_size = mem_req.size;
 	b.page_index = page;
@@ -307,7 +315,9 @@ bool allocate_buffer(alloc::buffer* buf, void* data, uint32_t memory_type, VkDev
 	
 	fill_memory(mem_req.size, memory_offset, page, freelist_index);
 	
+#ifdef DEBUG_ALLOC_PRINT
 	debug_print_page_freelist(page);
+#endif
 	
 	*buf = b;
 	return true;
@@ -342,24 +352,31 @@ bool allocate_image(alloc::image* image, uint16_t width, uint16_t height, VkForm
 	VkMemoryRequirements mem_req;
 	vkGetImageMemoryRequirements(get_device(), img.vk_image, &mem_req);
 
+#ifdef DEBUG_ALLOC_PRINT
 	std::cout << "Attempting an allocation of " << mem_req.size << " bytes for an image." << std::endl;
+#endif
 
 	size_t page, memory_offset, freelist_index;
 	if(!find_page_space(mem_req, memory_type, &page, &memory_offset, &freelist_index)) return false;
 
+#ifdef DEBUG_ALLOC_PRINT
 	std::cout << "Space found: page " << page << ", offset: " << memory_offset << " bytes." << std::endl;
+#endif
 
 	img.allocation_size = mem_req.size;
 	img.page_index = page;
 	img.page_offset = memory_offset;
 	img.vk_format = image_format;
+	img.vk_image_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 	img.width = width;
 	img.height = height;
 	vkBindImageMemory(get_device(), img.vk_image, mem_pages[page].memory, memory_offset);
 
 	fill_memory(mem_req.size, memory_offset, page, freelist_index);
 
+#ifdef DEBUG_ALLOC_PRINT
 	debug_print_page_freelist(page);
+#endif
 
 	*image = img;
 	return true;
@@ -494,6 +511,55 @@ bool alloc::copy_data_to_image(alloc::image* img, void* data, uint32_t width, ui
 	return true;
 }
 
+bool alloc::copy_image_to_buffer(alloc::image* img, alloc::buffer* buffer, uint32_t width, uint32_t height, VkImageAspectFlags aspect)
+{
+	VkCommandBufferAllocateInfo info_alloc{};
+	info_alloc.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	info_alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	info_alloc.commandPool = staging_command_pool;
+	info_alloc.commandBufferCount = 1;
+	
+	VkCommandBuffer cmd_buffer;
+	vkAllocateCommandBuffers(get_device(), &info_alloc, &cmd_buffer);
+	
+	VkCommandBufferBeginInfo info_begin{};
+	info_begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	info_begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	
+	vkBeginCommandBuffer(cmd_buffer, &info_begin);
+
+	VkBufferImageCopy copy_region{};
+	copy_region.bufferOffset = 0;
+	
+	//Indicating that the pixels are tightly packed.
+	copy_region.bufferRowLength = 0;
+	copy_region.bufferImageHeight = 0;
+
+	copy_region.imageSubresource.aspectMask = aspect;
+	copy_region.imageSubresource.mipLevel = 0;
+	copy_region.imageSubresource.baseArrayLayer = 0;
+	copy_region.imageSubresource.layerCount = 1;
+
+	copy_region.imageOffset = {0, 0, 0};
+	copy_region.imageExtent = {width, height, 1};
+
+	vkCmdCopyImageToBuffer(cmd_buffer, img->vk_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer->vk_buffer, 1, &copy_region);
+
+	vkEndCommandBuffer(cmd_buffer);
+	
+	VkSubmitInfo info_submit{};
+	info_submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	info_submit.commandBufferCount = 1;
+	info_submit.pCommandBuffers = &cmd_buffer;
+
+	vkQueueSubmit(staging_queue, 1, &info_submit, VK_NULL_HANDLE);
+	vkQueueWaitIdle(staging_queue);
+	
+	vkFreeCommandBuffers(get_device(), staging_command_pool, 1, &cmd_buffer);
+
+	return true;
+}
+
 bool alloc::create_buffer(VkBuffer* buffer, VkDeviceMemory* memory, uint32_t size, VkBufferUsageFlags usage, VkMemoryPropertyFlags memory_properties)
 {
 	return create_buffer(buffer, memory, size, usage, memory_properties, VK_SHARING_MODE_EXCLUSIVE);
@@ -507,15 +573,19 @@ bool alloc::create_buffer(VkBuffer* buffer, VkDeviceMemory* memory, uint32_t siz
 	info_buffer.usage = usage;
 	info_buffer.sharingMode = sharing_mode;
 	
+#ifdef DEBUG_ALLOC_PRINT
 	std::cout << "Buffer usage: " << usage << std::endl;
+#endif
 	
 	VkResult r = vkCreateBuffer(get_device(), &info_buffer, nullptr, buffer);
 	VERIFY(r, "Failed to create Vulkan buffer.");
 
 	VkMemoryRequirements mem_req;
 	vkGetBufferMemoryRequirements(get_device(), *buffer, &mem_req);
-	
+
+#ifdef DEBUG_ALLOC_PRINT	
 	std::cout << "Buffer required size: " << mem_req.size << " bytes." << std::endl;
+#endif
 	
 	VkMemoryAllocateInfo info_alloc{};
 	info_alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -552,7 +622,9 @@ void alloc::destroy_buffer(VkBuffer* buffer, VkDeviceMemory* memory)
 
 void alloc::free(buffer buf)
 {
+#ifdef DEBUG_ALLOC_PRINT
 	std::cout << "[ALLOC|INF] Freeing allocated buffer of " << buf.allocation_size << " bytes." << std::endl;
+#endif
 	
 	vkDestroyBuffer(get_device(), buf.vk_buffer, nullptr);
 	
@@ -587,12 +659,16 @@ void alloc::free(buffer buf)
 		}
 	}
 	
+#ifdef DEBUG_ALLOC_PRINT
 	debug_print_page_freelist(page);
+#endif
 }
 
 void alloc::free(image img)
 {
+#ifdef DEBUG_ALLOC_PRINT
 	std::cout << "[ALLOC|INF] Freeing allocated image of " << img.allocation_size << " bytes." << std::endl;
+#endif
 	
 	vkDestroyImage(get_device(), img.vk_image, nullptr);
 	
@@ -627,7 +703,9 @@ void alloc::free(image img)
 		}
 	}
 	
+#ifdef DEBUG_ALLOC_PRINT
 	debug_print_page_freelist(page);
+#endif
 }
 
 VkDeviceMemory alloc::get_memory_page(uint16_t index)
@@ -652,6 +730,11 @@ VkQueue alloc::get_staging_queue()
 
 void alloc::init(VkQueue queue, VkCommandPool pool)
 {
+	VkPhysicalDeviceMemoryProperties memory_properties;
+	vkGetPhysicalDeviceMemoryProperties(get_selected_physical_device(), &memory_properties);
+	
+	print_physical_device_memory_properties(memory_properties);
+	
 	staging_queue = queue;
 	staging_command_pool = pool;
 	
@@ -660,6 +743,17 @@ void alloc::init(VkQueue queue, VkCommandPool pool)
 #ifdef DEBUG_PRINT_SUCCESS
 	std::cout << "[ALLOC|INF] Memory allocator initialized." << std::endl;
 #endif
+}
+
+void alloc::map_data_from_buffer(void* dst, alloc::buffer* src, size_t offset, size_t size)
+{
+	void* map;
+	
+	VkDeviceMemory mem = mem_pages[src->page_index].memory;
+	
+	vkMapMemory(get_device(), mem, offset + src->page_offset, size, 0, &map);
+		memcpy(dst, map, size);
+	vkUnmapMemory(get_device(), mem);
 }
 
 void alloc::map_data_to_buffer(void* data, alloc::buffer* buffer, size_t offset, size_t size)
@@ -701,6 +795,8 @@ bool alloc::new_buffer(buffer* buf, void* data, VkDeviceSize size, uint32_t usag
 			return stage_buffer(buf, data, size, USAGE_STAGED_INDEX_BUFFER);
 		case ALLOC_USAGE_UNIFORM_BUFFER:
 			return allocate_host_buffer(buf, data, size, USAGE_UNIFORM_BUFFER);
+		case ALLOC_USAGE_GENERIC_BUFFER_CPU_VISIBLE:
+			return allocate_host_buffer(buf, data, size, USAGE_GENERIC_CPU_ACCESS_BUFFER);
 		//case ALLOC_USAGE_IMAGE:
 			//return false;
 		default:

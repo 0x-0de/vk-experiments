@@ -14,13 +14,17 @@
 
 static pipeline_vertex_input pvi;
 
-void sector::init()
+static uint64_t world_seed;
+
+void sector::init(uint64_t seed)
 {
 	pvi.vertex_binding = create_vertex_input_binding(0, 8 * sizeof(float), VK_VERTEX_INPUT_RATE_VERTEX);
 	pvi.vertex_attribs.resize(3);
 	pvi.vertex_attribs[0] = create_vertex_input_attribute(0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0);
 	pvi.vertex_attribs[1] = create_vertex_input_attribute(0, 1, VK_FORMAT_R32G32B32_SFLOAT, 3 * sizeof(float));
 	pvi.vertex_attribs[2] = create_vertex_input_attribute(0, 2, VK_FORMAT_R32G32_SFLOAT, 6 * sizeof(float));
+	
+	world_seed = seed;
 }
 
 uint32_t get_voxel_code(uint16_t x, uint16_t y, uint16_t z)
@@ -392,7 +396,7 @@ void sector::build()
 		}
 	}
 	
-	std::cout << "Vertex count: " << index_count << std::endl;
+	//std::cout << "Vertex count: " << index_count << std::endl;
 	
 	for(uint16_t i = 0; i < SECTOR_SIZE; i++)
 	{
@@ -423,8 +427,20 @@ void sector::generate()
 	for(uint32_t j = 0; j < SECTOR_SIZE; j++)
 	for(uint32_t k = 0; k < SECTOR_SIZE; k++)
 	{
-		double val = math::gradient_noise_3d_cosine(1, (double) i / 60, (double) j / 30, (double) k / 60);
+		double val = math::gradient_noise_3d_cosine(world_seed, (double) i / 60, (double) j / 30, (double) k / 60);
 		val += (double) ((signed) j - SECTOR_SIZE / 2) / 60;
 		voxels[i][j][k] = val < 0;
+	}
+}
+
+void sector::set(uint16_t x, uint16_t y, uint16_t z, uint32_t value, bool reload)
+{
+	if(x >= SECTOR_SIZE || y >= SECTOR_SIZE || z >= SECTOR_SIZE) return;
+	
+	voxels[x][y][z] = value;
+	if(reload)
+	{
+		vkDeviceWaitIdle(get_device());
+		build();
 	}
 }

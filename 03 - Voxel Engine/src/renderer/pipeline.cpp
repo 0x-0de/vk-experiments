@@ -283,13 +283,6 @@ bool pipeline::build(render_pass* rp)
 	
 	r = vkCreateGraphicsPipelines(get_device(), VK_NULL_HANDLE, 1, &info_pipeline, nullptr, &vk_pipeline);
 	VERIFY(r, "Failed to create Vulkan graphics pipeline.")
-	
-	/*
-	for(size_t i = 0; i < shaders.size(); i++)
-	{
-		vkDestroyShaderModule(get_device(), shaders[i].module, nullptr);
-	}
-	*/
 
 	usable = true;
 #ifdef DEBUG_PRINT_SUCCESS

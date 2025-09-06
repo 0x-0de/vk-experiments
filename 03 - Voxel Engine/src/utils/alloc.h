@@ -10,6 +10,7 @@
 #define ALLOC_USAGE_DEPTH_ATTACHMENT 4
 #define ALLOC_USAGE_COLOR_ATTACHMENT 5
 #define ALLOC_USAGE_COLOR_ATTACHMENT_CPU_VISIBLE 6
+#define ALLOC_USAGE_GENERIC_BUFFER_CPU_VISIBLE 7
 
 #define ALLOC_DEFAULT_BUFFER_SHARING_MODE VK_SHARING_MODE_EXCLUSIVE
 
@@ -28,6 +29,7 @@ namespace alloc
 	{
 		VkImage vk_image;
 		VkFormat vk_format;
+		VkImageLayout vk_image_layout;
 		
 		uint16_t width, height;
 
@@ -40,6 +42,8 @@ namespace alloc
 
 	bool copy_data_to_image(alloc::image* img, void* data, uint32_t width, uint32_t height, uint32_t depth, VkImageAspectFlags aspect);
 	bool copy_data_to_image(alloc::image* img, void* data, uint32_t width, uint32_t height, uint32_t depth, VkImageAspectFlags aspect, VkCommandPool pool, VkQueue queue);
+	
+	bool copy_image_to_buffer(alloc::image* img, alloc::buffer* buffer, uint32_t width, uint32_t height, VkImageAspectFlags aspect);
 	
 	bool create_buffer(VkBuffer* buffer, VkDeviceMemory* memory, uint32_t size, VkBufferUsageFlags usage, VkMemoryPropertyFlags memory_properties);
 	bool create_buffer(VkBuffer* buffer, VkDeviceMemory* memory, uint32_t size, VkBufferUsageFlags usage, VkMemoryPropertyFlags memory_properties, VkSharingMode sharing_mode);
@@ -58,6 +62,8 @@ namespace alloc
 	VkQueue get_staging_queue();
 	
 	void init(VkQueue queue, VkCommandPool pool);
+	
+	void map_data_from_buffer(void* dst, alloc::buffer* src, size_t offset, size_t size);
 
 	void map_data_to_buffer(void* data, alloc::buffer* buffer, size_t offset, size_t size);
 	void map_data_to_buffer(void* data, alloc::buffer* buffer);

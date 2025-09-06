@@ -13,6 +13,15 @@ Going into learning Vulkan, I figured it might be a good time to revisit voxel e
 
 ## Patch Notes
 
+### v0.2 - September 5, 2025
+- Added the ability to place and remove blocks.
+	- Left click to remove, right click to place.
+	- Hold left alt to unfocus the window and select different blocks on-screen.
+- Changed sectors from 256x256x256 to 64x64x64, for the sake of being able to reload the sector mesh at runtime.
+- Updated the selection buffer to account for the new changes.
+- Fixed the camera jumping to the opposite direction when focusing the window for the first time.
+- Sectors now generate with a random seed.
+
 ### v0.1 - August 30, 2025
 ![Screenshot of the sector in v0.1](doc/0.1-landscape-1.png)
 - Initial public release, developed alongside v0.6 of my Vulkan framework.

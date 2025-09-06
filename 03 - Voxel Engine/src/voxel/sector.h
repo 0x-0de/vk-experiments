@@ -5,7 +5,7 @@
 
 #include "../utils/mesh.h"
 
-#define SECTOR_FACTOR 8
+#define SECTOR_FACTOR 6
 #define SECTOR_SIZE (1<<SECTOR_FACTOR)
 
 class sector
@@ -22,7 +22,9 @@ class sector
 		
 		void generate();
 		
-		static void init();
+		static void init(uint64_t seed);
+		
+		void set(uint16_t x, uint16_t y, uint16_t z, uint32_t value, bool reload);
 	private:
 		int64_t x, y, z;
 		bool can_draw;

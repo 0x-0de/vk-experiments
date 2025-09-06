@@ -45,7 +45,7 @@ bool mesh::add_vertex(std::vector<float> vertex)
 bool mesh::build()
 {
 #ifdef DEBUG_PRINT_SUCCESS
-	std::cout << "[UTILS|INF] Attempting to create mesh with " << data_indices.size() << " indices." << std::endl;
+	//std::cout << "[UTILS|INF] Attempting to create mesh with " << data_indices.size() << " indices." << std::endl;
 #endif
     clear_buffers();
 
@@ -62,7 +62,7 @@ bool mesh::build()
 
     built = true;
 #ifdef DEBUG_PRINT_SUCCESS
-	std::cout << "[UTILS|INF] Created mesh successfully." << std::endl;
+	//std::cout << "[UTILS|INF] Created mesh successfully." << std::endl;
 #endif
     return built;
 }
