@@ -50,6 +50,7 @@ class pipeline
 		
 		void add_color_blend_state(VkPipelineColorBlendAttachmentState color_blend_state);
 		void add_descriptor_set_layout(VkDescriptorSetLayout layout);
+		void add_push_constant_range(VkShaderStageFlags shader_stage, uint32_t offset, uint32_t size);
 		void add_shader_module(VkShaderModule module, VkShaderStageFlagBits shader_stage, const char* entrypoint);
 		void add_viewport(VkViewport vp, VkRect2D scissor);
 		
@@ -81,6 +82,7 @@ class pipeline
 		std::vector<pipeline_view> viewports;
 		
 		std::vector<VkPipelineColorBlendAttachmentState> info_color_blend_attachments;
+		std::vector<VkPushConstantRange> push_constant_ranges;
 		
 		pipeline_vertex_input vertex_input;
 		std::vector<VkDescriptorSetLayout> descriptor_set_layouts;

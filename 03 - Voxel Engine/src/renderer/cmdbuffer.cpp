@@ -132,6 +132,11 @@ VkCommandBuffer command_buffer::get_handle() const
 	return vk_command_buffer;
 }
 
+void command_buffer::push_constants(pipeline* p, VkShaderStageFlags shader_stage, uint32_t offset, uint32_t size, void* data)
+{
+	vkCmdPushConstants(vk_command_buffer, p->get_layout(), shader_stage, offset, size, data);
+}
+
 void command_buffer::reset()
 {
 	vkResetCommandBuffer(vk_command_buffer, 0);

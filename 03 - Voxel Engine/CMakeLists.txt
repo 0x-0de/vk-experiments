@@ -27,6 +27,7 @@ set(BUILD_SOURCES
 	"utils/mesh"
 	"utils/camera"
 	"voxel/sector"
+	"voxel/world"
 )
 
 list(TRANSFORM BUILD_SOURCES APPEND ${CPP_EXTENSION})

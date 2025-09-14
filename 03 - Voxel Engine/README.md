@@ -11,9 +11,19 @@ I probably made at least a dozen of these, all with different properties and fea
 
 Going into learning Vulkan, I figured it might be a good time to revisit voxel engine building, since the theory behind it is very straightforward. This project is currently in active development, alongside a few other Vulkan experiments. My final goal is to have a procedurally generated infinite world in which you can place and destroy voxels at will.
 
+## Known Issues
+
+You can't place voxels "into" another sector - placing on the border of sector boundaries such that the voxel comes "out of" the sector doesn't work.
+
 ## Patch Notes
 
-### v0.2 - September 5, 2025
+### v0.3 - September 14, 2025
+- Added support for multiple sectors.
+- Sectors now generate around the camera, allowing you to (theoretically) traverse a landscape of (2^64)x(2^64)x(2^64) voxels.
+- Sector generation is now multi-threaded.
+- Optimized the terrain generation algorithm to be many times faster, at the cost of slightly less smooth terrain.
+
+### v0.2 - September 6, 2025
 - Added the ability to place and remove blocks.
 	- Left click to remove, right click to place.
 	- Hold left alt to unfocus the window and select different blocks on-screen.

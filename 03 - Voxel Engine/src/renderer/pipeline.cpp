@@ -186,6 +186,16 @@ void pipeline::add_descriptor_set_layout(VkDescriptorSetLayout layout)
 	descriptor_set_layouts.push_back(layout);
 }
 
+void pipeline::add_push_constant_range(VkShaderStageFlags shader_stage, uint32_t offset, uint32_t size)
+{
+	VkPushConstantRange range{};
+	range.stageFlags = shader_stage;
+	range.offset = offset;
+	range.size = size;
+
+	push_constant_ranges.push_back(range);
+}
+
 void pipeline::add_shader_module(VkShaderModule module, VkShaderStageFlagBits shader_stage, const char* entrypoint)
 {
 	pipeline_shader shader{module, shader_stage, entrypoint};
@@ -211,6 +221,12 @@ bool pipeline::build(render_pass* rp)
 	{
 		info_pipeline_layout.setLayoutCount = descriptor_set_layouts.size();
 		info_pipeline_layout.pSetLayouts = descriptor_set_layouts.data();
+	}
+
+	if(push_constant_ranges.size() > 0)
+	{
+		info_pipeline_layout.pushConstantRangeCount = push_constant_ranges.size();
+		info_pipeline_layout.pPushConstantRanges = push_constant_ranges.data();
 	}
 
 	VkResult r = vkCreatePipelineLayout(get_device(), &info_pipeline_layout, nullptr, &vk_pipeline_layout);

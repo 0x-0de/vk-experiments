@@ -1,4 +1,8 @@
+#include "ref.h"
+
+#include <cmath>
 #include <iostream>
+#include <thread>
 
 #include "renderer/cmdbuffer.h"
 #include "renderer/descriptor.h"
@@ -15,12 +19,9 @@
 #include "utils/vksync.h"
 
 #include "voxel/sector.h"
+#include "voxel/world.h"
 
 #include "../lib/GLFW/glfw3.h"
-
-#include <cmath>
-
-#define INFO_LOG(x) std::cout << "[VOX|INF] " << x << std::endl
 
 #define GLFW_DEFAULT_WIDTH 1280
 #define GLFW_DEFAULT_HEIGHT 720
@@ -70,6 +71,7 @@ static camera3d* camera;
 
 static uint32_t voxel_selection_data[4];
 static bool window_resized = false;
+static bool is_running = false;
 
 #define SELECTION_BUFFER_FORMAT VK_FORMAT_R32G32B32A32_UINT
 
@@ -144,6 +146,8 @@ bool load_graphics_pipelines(swapchain* sc, pipeline_vertex_input pvi, descripto
 	
 	pipelines[PIPELINE_MAIN]->add_shader_module(shader_modules[SHADER_VERTEX_MAIN], VK_SHADER_STAGE_VERTEX_BIT, "main");
 	pipelines[PIPELINE_MAIN]->add_shader_module(shader_modules[SHADER_FRAGMENT_MAIN], VK_SHADER_STAGE_FRAGMENT_BIT, "main");
+
+	pipelines[PIPELINE_MAIN]->add_push_constant_range(VK_SHADER_STAGE_VERTEX_BIT, 0, 17 * sizeof(float));
 	
 	pipelines[PIPELINE_MAIN]->add_viewport(sc->get_default_viewport(), sc->get_full_scissor());
 	pipelines[PIPELINE_MAIN]->add_color_blend_state(get_color_blend_attachment_none());
@@ -155,6 +159,8 @@ bool load_graphics_pipelines(swapchain* sc, pipeline_vertex_input pvi, descripto
 
 	pipelines[PIPELINE_WIREFRAME]->add_shader_module(shader_modules[SHADER_VERTEX_WIREFRAME], VK_SHADER_STAGE_VERTEX_BIT, "main");
 	pipelines[PIPELINE_WIREFRAME]->add_shader_module(shader_modules[SHADER_FRAGMENT_WIREFRAME], VK_SHADER_STAGE_FRAGMENT_BIT, "main");
+
+	pipelines[PIPELINE_WIREFRAME]->add_push_constant_range(VK_SHADER_STAGE_VERTEX_BIT, 0, 17 * sizeof(float));
 	
 	pipelines[PIPELINE_WIREFRAME]->add_viewport(sc->get_default_viewport(), sc->get_full_scissor());
 	pipelines[PIPELINE_WIREFRAME]->add_color_blend_state(get_color_blend_attachment_none());
@@ -170,6 +176,7 @@ bool load_graphics_pipelines(swapchain* sc, pipeline_vertex_input pvi, descripto
 		
 	if(!pipelines[PIPELINE_WIREFRAME]->build(render_passes[RENDER_PASS_MAIN])) return false;
 	
+	/*
 	pipelines[PIPELINE_SELECTION_DEBUG]->add_shader_module(shader_modules[SHADER_VERTEX_SELECTION], VK_SHADER_STAGE_VERTEX_BIT, "main");
 	pipelines[PIPELINE_SELECTION_DEBUG]->add_shader_module(shader_modules[SHADER_FRAGMENT_SELECTION], VK_SHADER_STAGE_FRAGMENT_BIT, "main");
 	
@@ -180,9 +187,12 @@ bool load_graphics_pipelines(swapchain* sc, pipeline_vertex_input pvi, descripto
 	pipelines[PIPELINE_SELECTION_DEBUG]->set_pipeline_depth_stencil_state(create_simple_depth_test_state());
 		
 	if(!pipelines[PIPELINE_SELECTION_DEBUG]->build(render_passes[RENDER_PASS_MAIN])) return false;
-		
+	*/
+	
 	pipelines[PIPELINE_SELECTION]->add_shader_module(shader_modules[SHADER_VERTEX_SELECTION], VK_SHADER_STAGE_VERTEX_BIT, "main");
 	pipelines[PIPELINE_SELECTION]->add_shader_module(shader_modules[SHADER_FRAGMENT_SELECTION], VK_SHADER_STAGE_FRAGMENT_BIT, "main");
+
+	pipelines[PIPELINE_SELECTION]->add_push_constant_range(VK_SHADER_STAGE_VERTEX_BIT, 0, 17 * sizeof(float));
 		
 	pipelines[PIPELINE_SELECTION]->add_viewport(sc->get_default_viewport(), sc->get_full_scissor());
 	pipelines[PIPELINE_SELECTION]->add_color_blend_state(get_color_blend_attachment_none());
@@ -264,22 +274,16 @@ void update_uniforms(uint16_t descriptor_set, double time, descriptor* desc, flo
 {
 	math::mat projection = math::perspective(70.0 * 3.1415926 / 180.0, width / height, 0.01, 1000.0);
 	float projection_data[16];
-	
-	math::mat rotation = math::rotation(math::vec3(0, 0, time));
-	math::mat transform = math::transform(math::vec3(std::sin(time / 4) / 2, 0, -5), rotation, math::vec3(1, 1, 1));
-	float transform_data[16];
 
 	math::mat look_at = camera->view_matrix();
 	float view_data[16];
 
-	transform.get_data(transform_data);
 	projection.get_data(projection_data);
 	look_at.get_data(view_data);
 
-	desc->place_data(descriptor_set, 0, 0, 16 * sizeof(float), transform_data);
-	desc->place_data(descriptor_set, 0, 16 * sizeof(float), 16 * sizeof(float), projection_data);
-	desc->place_data(descriptor_set, 0, 32 * sizeof(float), 16 * sizeof(float), view_data);
-	desc->place_data(descriptor_set, 0, 48 * sizeof(float), 4 * sizeof(uint32_t), voxel_selection_data);
+	desc->place_data(descriptor_set, 0, 0, 16 * sizeof(float), projection_data);
+	desc->place_data(descriptor_set, 0, 16 * sizeof(float), 16 * sizeof(float), view_data);
+	desc->place_data(descriptor_set, 0, 32 * sizeof(float), 4 * sizeof(uint32_t), voxel_selection_data);
 }
 
 void swapchain_resize_callback(swapchain* sc)
@@ -293,6 +297,14 @@ void swapchain_resize_callback(swapchain* sc)
 
 	sc->clear_swapchain_render_targets();
 	sc->add_swapchain_render_target(render_target_views[RENDER_TARGET_DEPTH_BUFFER]);
+}
+
+void thread_world_update()
+{
+	while(is_running)
+	{
+		world::update_sectors_alt_thread();
+	}
 }
 
 int main()
@@ -363,14 +375,6 @@ int main()
 	INFO_LOG("Creating 3D camera.");
 	camera = new camera3d(math::vec3(32, 40, 32));
 	
-	sector::init(glfwGetTime() * 1000000000);
-	
-	sector* sec = new sector(0, 0, 0);
-	INFO_LOG("Generating sector.");
-	sec->generate();
-	INFO_LOG("Loading sector.");
-	sec->build();
-	
 	double timer = glfwGetTime();
 	uint32_t frames = 0;
 
@@ -385,7 +389,12 @@ int main()
 	
 	//semaphore* sp_selection_buffer = new semaphore();
 	fence* fnc_selection_buffer = new fence();
-	
+
+	world::init();
+
+	is_running = true;
+	std::thread world_updater{thread_world_update};
+
 	int voxel_timer = 0;
 	
 	while(!glfwWindowShouldClose(window))
@@ -425,7 +434,6 @@ int main()
 		}
 		else if(glfwGetKey(window, GLFW_KEY_ESCAPE))
 		{
-			
 			window_focused = false;
 		}
 		
@@ -458,15 +466,12 @@ int main()
 			current_pipeline = PIPELINE_WIREFRAME;
 			pipeline_toggle = true;
 		}
-		else if(glfwGetKey(window, GLFW_KEY_H) && !pipeline_toggle)
-		{
-			current_pipeline = PIPELINE_SELECTION_DEBUG;
-			pipeline_toggle = true;
-		}
-		else if(!glfwGetKey(window, GLFW_KEY_F) && !glfwGetKey(window, GLFW_KEY_G) && !glfwGetKey(window, GLFW_KEY_H))
+		else if(!glfwGetKey(window, GLFW_KEY_F) && !glfwGetKey(window, GLFW_KEY_G))
 		{
 			pipeline_toggle = false;
 		}
+
+		world::update_sectors_main_thread(camera);
 		
 		uint32_t frame_index;
 
@@ -488,7 +493,7 @@ int main()
 		cmd_buffer[frame_index]->bind_pipeline(pipelines[PIPELINE_SELECTION]);
 		cmd_buffer[frame_index]->set_viewport(sc->get_viewport(), sc->get_scissor());
 		cmd_buffer[frame_index]->bind_descriptor_set(pipelines[PIPELINE_SELECTION]->get_layout(), desc->get_descriptor_set(sc->get_current_image_index()));
-		sec->draw(cmd_buffer[frame_index], desc, frame_index);
+		world::draw(cmd_buffer[frame_index], pipelines[PIPELINE_SELECTION]);
 		cmd_buffer[frame_index]->end_render_pass();
 		cmd_buffer[frame_index]->end_recording();
 		
@@ -517,7 +522,7 @@ int main()
 		cmd_buffer[frame_index]->bind_pipeline(pipelines[current_pipeline]);
 		cmd_buffer[frame_index]->set_viewport(sc->get_viewport(), sc->get_scissor());
 		cmd_buffer[frame_index]->bind_descriptor_set(pipelines[0]->get_layout(), desc->get_descriptor_set(sc->get_current_image_index()));
-		sec->draw(cmd_buffer[frame_index], desc, frame_index);
+		world::draw(cmd_buffer[frame_index], pipelines[current_pipeline]);
 		cmd_buffer[frame_index]->end_render_pass();
 		cmd_buffer[frame_index]->end_recording();
 
@@ -527,72 +532,19 @@ int main()
 		if(!sc->image_render(queues[QUEUE_GRAPHICS], cmd_buffer[frame_index])) return 1;
 		sc->image_present(queues[QUEUE_PRESENT]);
 		
-		int voxel_x = ((int) voxel_selection_data[0]) >> 16;
-		int voxel_y = (((int) voxel_selection_data[0]) >> 8) & 255;
-		int voxel_z = ((int) voxel_selection_data[0]) & 255;
-		
-		int face = (int) voxel_selection_data[1];
-		
-		std::cout << voxel_x << ", " << voxel_y << ", " << voxel_z << " : " << face << std::endl;
-		
-		if(voxel_timer > 0)
-			voxel_timer--;
-		
-		if(window_focused && voxel_timer == 0)
-		{
-			if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_1))
-			{
-				switch(face)
-				{
-					case 0:
-					case 2:
-					case 4:
-						break;
-					case 1:
-						voxel_x -= 1;
-						break;
-					case 3:
-						voxel_y -= 1;
-						break;
-					case 5:
-						voxel_z -= 1;
-						break;
-				}
-				
-				sec->set(voxel_x, voxel_y, voxel_z, 0, true);
-			}
-			
-			if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_2))
-			{
-				switch(face)
-				{
-					case 1:
-					case 3:
-					case 5:
-						break;
-					case 0:
-						voxel_x -= 1;
-						break;
-					case 2:
-						voxel_y -= 1;
-						break;
-					case 4:
-						voxel_z -= 1;
-						break;
-				}
-				
-				sec->set(voxel_x, voxel_y, voxel_z, 1, true);
-			}
-			
-			voxel_timer = 25;
-		}
+		world::update_input(window, window_focused, voxel_selection_data);
 
 		frames++;
 	}
 	
 	vkDeviceWaitIdle(get_device());
-	
+
+	is_running = false;
+	world_updater.join();
+
 	INFO_LOG("Unloading resources.");
+	world::deinit();
+
 	delete fnc_selection_buffer;
 		
 	for(size_t i = 0; i < num_images; i++)
@@ -600,7 +552,6 @@ int main()
 		delete cmd_buffer[i];
 	}
 
-	delete sec;
 	delete camera;
 	delete[] cmd_buffer;
 	unload_graphics_pipelines();

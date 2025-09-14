@@ -3,6 +3,7 @@ layout(location = 0) out uvec4 color;
 
 layout(location = 0) in vec3 f_pos;
 layout(location = 1) in vec2 f_tex;
+layout(location = 2) in float sector_id;
 
 void main()
 {
@@ -26,5 +27,5 @@ void main()
 	
 	int sel = sel_x | sel_y | sel_z;
 	
-    color = uvec4(sel, int (round(f_tex.x)), 0, 1);
+    color = uvec4(sel, int (round(f_tex.x)), int (round(sector_id)), 1);
 }

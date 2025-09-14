@@ -30,6 +30,8 @@ class command_buffer
 		void end_render_pass();
 		
 		VkCommandBuffer get_handle() const;
+
+		void push_constants(pipeline* p, VkShaderStageFlags shader_stage, uint32_t offset, uint32_t size, void* data);
 		
 		void reset();
 		

@@ -1,5 +1,8 @@
 #include "sector.h"
 
+#define SECTOR_GEN_OPTIMIZE
+#define SECTOR_GEN_OPTIMIZE_LEAP 4
+
 #define FACE_LEFT 0
 #define FACE_RIGHT 1
 #define FACE_BOTTOM 2
@@ -27,6 +30,13 @@ void sector::init(uint64_t seed)
 	world_seed = seed;
 }
 
+double generate_landscape(double x, double y, double z)
+{
+	double val = math::gradient_noise_3d_cosine(world_seed, x / 60, y / 30, z / 60);
+	val += (double) ((signed) y - SECTOR_SIZE / 2) / 60;
+	return val;
+}
+
 uint32_t get_voxel_code(uint16_t x, uint16_t y, uint16_t z)
 {
 	return (x << (SECTOR_FACTOR << 1)) | (y << SECTOR_FACTOR) | z;
@@ -52,7 +62,7 @@ sector::sector(int64_t x, int64_t y, int64_t z) : x(x), y(y), z(z)
 	}
 	
 	m = new mesh(pvi);
-	can_draw = false;
+	state = SECTOR_STATE_NEW;
 	
 	math::mat t = math::transform(math::vec3(x, y, z) * SECTOR_SIZE, math::rotation(math::vec3(0, 0, 0)), math::vec3(1, 1, 1));
 	t.get_data(transform_data);
@@ -73,6 +83,109 @@ sector::~sector()
 
 void sector::build()
 {	
+	state = m->build() ? SECTOR_STATE_DRAWABLE : SECTOR_STATE_EMPTY;
+}
+
+bool sector::is_facing(char*** facing, uint16_t x, uint16_t y, uint16_t z, uint8_t face)
+{
+	return (facing[x][y][z] & (1 << face)) == (1 << face);
+}
+
+void sector::draw(command_buffer* cmd_buffer)
+{
+	if(state == SECTOR_STATE_DRAWABLE) m->draw(cmd_buffer);
+}
+
+void sector::generate()
+{
+#ifdef SECTOR_GEN_OPTIMIZE
+	uint32_t size = SECTOR_SIZE / SECTOR_GEN_OPTIMIZE_LEAP + 1;
+
+	double*** gradient_values = new double**[size];
+	for(size_t i = 0; i < size; i++)
+	{
+		gradient_values[i] = new double*[size];
+		for(size_t j = 0; j < size; j++)
+			gradient_values[i][j] = new double[size];
+	}
+
+	for(uint32_t i = 0; i < size; i++)
+	for(uint32_t j = 0; j < size; j++)
+	for(uint32_t k = 0; k < size; k++)
+	{
+		double pos_x = x * SECTOR_SIZE + i * SECTOR_GEN_OPTIMIZE_LEAP;
+		double pos_y = y * SECTOR_SIZE + j * SECTOR_GEN_OPTIMIZE_LEAP;
+		double pos_z = z * SECTOR_SIZE + k * SECTOR_GEN_OPTIMIZE_LEAP;
+
+		gradient_values[i][j][k] = generate_landscape(pos_x, pos_y, pos_z);
+	}
+
+	for(uint32_t i = 0; i < size - 1; i++)
+	for(uint32_t j = 0; j < size - 1; j++)
+	for(uint32_t k = 0; k < size - 1; k++)
+	{
+		double aaa = gradient_values[i][j][k];
+		double baa = gradient_values[i + 1][j][k];
+		double aba = gradient_values[i][j + 1][k];
+		double bba = gradient_values[i + 1][j + 1][k];
+		double aab = gradient_values[i][j][k + 1];
+		double bab = gradient_values[i + 1][j][k + 1];
+		double abb = gradient_values[i][j + 1][k + 1];
+		double bbb = gradient_values[i + 1][j + 1][k + 1];
+
+		for(uint32_t x = 0; x < SECTOR_GEN_OPTIMIZE_LEAP; x++)
+		for(uint32_t y = 0; y < SECTOR_GEN_OPTIMIZE_LEAP; y++)
+		for(uint32_t z = 0; z < SECTOR_GEN_OPTIMIZE_LEAP; z++)
+		{
+			uint32_t ix = i * SECTOR_GEN_OPTIMIZE_LEAP + x;
+			uint32_t iy = j * SECTOR_GEN_OPTIMIZE_LEAP + y;
+			uint32_t iz = k * SECTOR_GEN_OPTIMIZE_LEAP + z;
+
+			double dx = (double) x / SECTOR_GEN_OPTIMIZE_LEAP;
+			double dy = (double) y / SECTOR_GEN_OPTIMIZE_LEAP;
+			double dz = (double) z / SECTOR_GEN_OPTIMIZE_LEAP;
+
+			voxels[ix][iy][iz] = math::interp_linear_3d(aaa, baa, aba, bba, aab, bab, abb, bbb, dx, dy, dz) < 0;
+		}
+	}
+	
+	for(size_t i = 0; i < size; i++)
+	{
+		for(size_t j = 0; j < size; j++)
+			delete[] gradient_values[i][j];
+		delete[] gradient_values[i];
+	}
+	delete[] gradient_values;
+#else
+	for(uint32_t i = 0; i < SECTOR_SIZE; i++)
+	for(uint32_t j = 0; j < SECTOR_SIZE; j++)
+	for(uint32_t k = 0; k < SECTOR_SIZE; k++)
+	{
+		double pos_x = x * SECTOR_SIZE + i;
+		double pos_y = y * SECTOR_SIZE + j;
+		double pos_z = z * SECTOR_SIZE + k;
+
+		voxels[i][j][k] = generate_landscape(pos_x, pos_y, pos_z) < 0;
+	}
+#endif
+
+	state = SECTOR_STATE_GENERATED;
+}
+
+void sector::get_pos(int64_t* pos_x, int64_t* pos_y, int64_t* pos_z)
+{
+	*pos_x = x;
+	*pos_y = y;
+	*pos_z = z;
+}
+
+uint8_t sector::get_state() const
+{
+	return state;
+}
+
+void sector::load_mesh()
+{
 	uint16_t bound = SECTOR_SIZE - 1;
 	
 	char*** facing = new char**[SECTOR_SIZE];
@@ -405,32 +518,8 @@ void sector::build()
 		delete[] facing[i];
 	}
 	delete[] facing;
-	
-	m->build();
-	can_draw = true;
-}
 
-bool sector::is_facing(char*** facing, uint16_t x, uint16_t y, uint16_t z, uint8_t face)
-{
-	return (facing[x][y][z] & (1 << face)) == (1 << face);
-}
-
-void sector::draw(command_buffer* cmd_buffer, descriptor* uniforms, uint8_t frame_index)
-{
-	uniforms->place_data(frame_index, 0, 0, 16 * sizeof(float), transform_data);
-	if(can_draw) m->draw(cmd_buffer);
-}
-
-void sector::generate()
-{
-	for(uint32_t i = 0; i < SECTOR_SIZE; i++)
-	for(uint32_t j = 0; j < SECTOR_SIZE; j++)
-	for(uint32_t k = 0; k < SECTOR_SIZE; k++)
-	{
-		double val = math::gradient_noise_3d_cosine(world_seed, (double) i / 60, (double) j / 30, (double) k / 60);
-		val += (double) ((signed) j - SECTOR_SIZE / 2) / 60;
-		voxels[i][j][k] = val < 0;
-	}
+	state = SECTOR_STATE_MESH_LOADED;
 }
 
 void sector::set(uint16_t x, uint16_t y, uint16_t z, uint32_t value, bool reload)
@@ -441,6 +530,11 @@ void sector::set(uint16_t x, uint16_t y, uint16_t z, uint32_t value, bool reload
 	if(reload)
 	{
 		vkDeviceWaitIdle(get_device());
+		load_mesh();
 		build();
+	}
+	else
+	{
+		state = SECTOR_STATE_GENERATED;
 	}
 }

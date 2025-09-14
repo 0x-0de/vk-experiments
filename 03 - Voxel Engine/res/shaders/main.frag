@@ -5,6 +5,8 @@ layout(location = 0) in vec3 f_pos;
 layout(location = 1) in vec3 f_color;
 layout(location = 2) in vec2 f_tex;
 layout(location = 3) flat in uvec4 f_selection;
+layout(location = 4) in float shader_id;
+layout(location = 5) in vec3 f_tpos;
 
 #define EPSILON 0.0001
 
@@ -78,17 +80,17 @@ float interp_linear_3d(float aaa, float baa, float aba, float bba, float aab, fl
 
 vec3 get_smooth_random_color()
 {
-	int ax = int (floor(f_pos.x / 16 + EPSILON));
-	int ay = int (floor(f_pos.y / 16 + EPSILON));
-	int az = int (floor(f_pos.z / 16 + EPSILON));
+	int ax = int (floor(f_tpos.x / 16 + EPSILON));
+	int ay = int (floor(f_tpos.y / 16 + EPSILON));
+	int az = int (floor(f_tpos.z / 16 + EPSILON));
 	
 	int bx = ax + 1;
 	int by = ay + 1;
 	int bz = az + 1;
 	
-	float dx = (f_pos.x - ax * 16);
-	float dy = (f_pos.y - ay * 16);
-	float dz = (f_pos.z - az * 16);
+	float dx = (f_tpos.x - ax * 16);
+	float dy = (f_tpos.y - ay * 16);
+	float dz = (f_tpos.z - az * 16);
 	
 	dx = floor(dx);
 	dy = floor(dy);
@@ -116,9 +118,9 @@ vec3 get_smooth_random_color()
 
 vec3 get_random_color()
 {
-	int px = int (floor(f_pos.x * 4 + EPSILON));
-	int py = int (floor(f_pos.y * 4 + EPSILON));
-	int pz = int (floor(f_pos.z * 4 + EPSILON));
+	int px = int (floor(f_tpos.x * 4 + EPSILON));
+	int py = int (floor(f_tpos.y * 4 + EPSILON));
+	int pz = int (floor(f_tpos.z * 4 + EPSILON));
 	
 	vec3 r = (random_color(px, py, pz) - vec3(0.5, 0.5, 0.5)) / 8;
 	return r;
@@ -166,44 +168,9 @@ void main()
 	float s_z = float (sel_z);
 	
     color = vec4((vec3(0.27, 0.9, 0.2) + r + sr) * light, 1);
-	
-	/*
-	float p_x = f_pos.x + EPSILON - floor(f_pos.x + EPSILON);
-	float p_y = f_pos.y + EPSILON - floor(f_pos.y + EPSILON);
-	float p_z = f_pos.z + EPSILON - floor(f_pos.z + EPSILON);
 
-	color = vec4(p_x, p_y, p_z, 1);
-	*/
-
-	if(f_pos.x >= s_x - EPSILON && f_pos.y >= s_y - EPSILON && f_pos.z >= s_z - EPSILON && f_pos.x <= s_x + 1 + EPSILON && f_pos.y < s_y + 1 + EPSILON && f_pos.z < s_z + 1 + EPSILON)
+	if(round(shader_id) == round(f_selection.z) && f_pos.x >= s_x - EPSILON && f_pos.y >= s_y - EPSILON && f_pos.z >= s_z - EPSILON && f_pos.x <= s_x + 1 + EPSILON && f_pos.y < s_y + 1 + EPSILON && f_pos.z < s_z + 1 + EPSILON)
 	{
 		color += vec4(0.15, 0.15, 0.15, 0);
 	}
-
-	/*
-	if(f_selection.w != 0)
-	{
-		switch(face)
-		{
-			case FACE_LEFT:
-			case FACE_RIGHT:
-				
-			break;
-			case FACE_BOTTOM:
-			case FACE_TOP:
-				if(f_pos.x >= s_x && f_pos.y >= s_y && f_pos.z >= s_z && f_pos.x < s_x + 1 && f_pos.y <= s_y + 1 && f_pos.z < s_z + 1)
-				{
-					color += vec4(0.15, 0.15, 0.15, 0);
-				}
-			break;
-			case FACE_FRONT:
-			case FACE_BACK:
-				if(f_pos.x >= s_x && f_pos.y >= s_y && f_pos.z >= s_z && f_pos.x < s_x + 1 && f_pos.y < s_y + 1 && f_pos.z <= s_z + 1)
-				{
-					color += vec4(0.15, 0.15, 0.15, 0);
-				}
-			break;
-		}
-	}
-	*/
 }

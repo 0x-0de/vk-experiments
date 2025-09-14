@@ -47,20 +47,24 @@ bool mesh::build()
 #ifdef DEBUG_PRINT_SUCCESS
 	//std::cout << "[UTILS|INF] Attempting to create mesh with " << data_indices.size() << " indices." << std::endl;
 #endif
+    built = false;
     clear_buffers();
 
-    if(!alloc::new_buffer(&vertex_buffer, data_vertices.data(), data_vertices.size() * sizeof(float), ALLOC_USAGE_STAGED_VERTEX_BUFFER)) return false;
-    vb_created = true;
+    if(data_vertices.size() > 0 && data_indices.size() > 0)
+    {
+        if(!alloc::new_buffer(&vertex_buffer, data_vertices.data(), data_vertices.size() * sizeof(float), ALLOC_USAGE_STAGED_VERTEX_BUFFER)) return false;
+        vb_created = true;
 
-    if(!alloc::new_buffer(&index_buffer, data_indices.data(), data_indices.size() * sizeof(uint32_t), ALLOC_USAGE_STAGED_INDEX_BUFFER)) return false;
-    ib_created = true;
+        if(!alloc::new_buffer(&index_buffer, data_indices.data(), data_indices.size() * sizeof(uint32_t), ALLOC_USAGE_STAGED_INDEX_BUFFER)) return false;
+        ib_created = true;
 
-    num_indices = data_indices.size();
+        num_indices = data_indices.size();
 
-    std::vector<float>().swap(data_vertices);
-    std::vector<uint32_t>().swap(data_indices);
+        std::vector<float>().swap(data_vertices);
+        std::vector<uint32_t>().swap(data_indices);
 
-    built = true;
+        built = true;
+    }
 #ifdef DEBUG_PRINT_SUCCESS
 	//std::cout << "[UTILS|INF] Created mesh successfully." << std::endl;
 #endif

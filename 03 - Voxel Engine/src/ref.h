@@ -1,0 +1,1 @@
+#define INFO_LOG(x) std::cout << "[VOX|INF] " << x << std::endl
