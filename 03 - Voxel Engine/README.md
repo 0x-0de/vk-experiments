@@ -23,6 +23,7 @@ Going into learning Vulkan, I figured it might be a good time to revisit voxel e
 - Sectors now generate around the camera, allowing you to (theoretically) traverse a landscape of (2^64)x(2^64)x(2^64) voxels.
 - Sector generation is now multi-threaded.
 - Optimized the terrain generation algorithm to be many times faster, at the cost of slightly less smooth terrain.
+- Removed the selection buffer draw mode - it has served its purpose.
 
 ### v0.2 - September 6, 2025
 - Added the ability to place and remove blocks.
