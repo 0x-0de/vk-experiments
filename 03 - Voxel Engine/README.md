@@ -1,5 +1,5 @@
 # Experiment 03 - Voxel Engine
-![Screenshot of the sector in v0.1](doc/0.1-landscape-2.png)
+![Screenshot of the voxel landscape in v0.3](doc/0.3-landscape-1.png)
 ## Preamble
 When I first began learning OpenGL, alongside C++ throughout late 2017 and early 2018, my first fixation was on voxel engines. Games like Minecraft are what motivated me to learn to code in the first place, so this minor obsession should be unsurprising.
 
@@ -13,11 +13,12 @@ Going into learning Vulkan, I figured it might be a good time to revisit voxel e
 
 ## Known Issues
 
-You can't place voxels "into" another sector - placing on the border of sector boundaries such that the voxel comes "out of" the sector doesn't work.
+- You can't place voxels "into" another sector - placing on the border of sector boundaries such that the voxel comes "out of" the sector doesn't work.
 
 ## Patch Notes
 
 ### v0.3 - September 14, 2025
+![Screenshot of the voxel landscape in v0.3](doc/0.3-landscape-1.png)
 - Added support for multiple sectors.
 - Sectors now generate around the camera, allowing you to (theoretically) traverse a landscape of (2^64)x(2^64)x(2^64) voxels.
 - Sector generation is now multi-threaded.
